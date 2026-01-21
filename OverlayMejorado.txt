@@ -1,0 +1,588 @@
+// ==UserScript==
+// @name         Flashcore Overlay Mejorado
+// @namespace    http://tampermonkey.net/
+// @version      7.5
+// @description  Añade un botón circular para mostrar overlays de partidos en Flashcore con agrupación por liga
+// @author       TuNombre
+// @match        https://www.flashscore.es/*
+// @grant        GM_addStyle
+// @run-at       document-end
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    // --- ESTILOS CSS PARA EL BOTÓN Y OVERLAY ---
+    GM_addStyle(`
+        /* Estilo del botón circular */
+        .fc-overlay-btn {
+            position: absolute;
+            right: 10px;
+            bottom: 10px;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        }
+        .fc-overlay-btn:hover {
+            background-color: #0056b3;
+        }
+
+        /* Ocultar botón rojo */
+        .mi-boton-custom {
+            display: none !important;
+        }
+
+        /* Contenedor del overlay */
+        .fc-overlay {
+            position: fixed;
+            top: 50px;
+            left: 50px;
+            z-index: 2147483647;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.8);
+            background-color: #000000 !important;
+            min-width: 400px;
+            border: 1px solid #333;
+            cursor: default !important;
+        }
+
+        .fc-overlay .fc-overlay-btn {
+            display: none !important;
+        }
+
+        /* Para asegurarse de que el overlay esté siempre visible */
+        .fc-overlay.always-on-top {
+            z-index: 2147483647 !important;
+        }
+
+        /* Estilo para el contenedor interno del overlay */
+        .fc-overlay-inner {
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: #000000;
+            cursor: default !important;
+        }
+
+        /* Estilo para el encabezado de la liga */
+        .fc-overlay-header {
+            padding: 8px 12px;
+            background: #1a1a1a;
+            border-bottom: 1px solid #333;
+            color: white;
+            font-weight: bold;
+            font-size: 12px;
+            cursor: move !important;
+        }
+
+        /* Contenedor de partidos */
+        .fc-matches-container {
+            padding: 10px;
+            background-color: #000000;
+            cursor: default !important;
+        }
+
+        /* Ocultar elementos no deseados en el overlay */
+        .fc-overlay .headerLeague__star,
+        .fc-overlay .wizard__relativeWrapper,
+        .fc-overlay .headerLeague__actions,
+        .fc-overlay .anclar-partido-btn,
+        .fc-overlay .wcl-favorite_ggUc2,
+        .fc-overlay .wcl-pin_J5btx,
+        .fc-overlay .wcl-accordion_7Fi80,
+        .fc-overlay .mi-boton-custom {
+            display: none !important;
+        }
+
+        /* Prevenir cualquier interacción con clics simples en enlaces */
+        .fc-overlay a {
+            pointer-events: none !important;
+        }
+
+        .fc-overlay .eventRowLink {
+            display: none !important;
+        }
+
+        /* Asegurar que los partidos se muestren correctamente */
+        .fc-overlay .event__match {
+            display: grid !important;
+            grid-template-columns: 30px auto 1fr auto 30px 40px;
+            grid-template-rows: auto auto;
+            align-items: center;
+            padding: 8px 10px;
+            background-color: #000000;
+            min-height: 60px;
+            gap: 4px;
+            width: 100%;
+            box-sizing: border-box;
+            margin-bottom: 5px;
+            border-bottom: 1px solid #333;
+            cursor: pointer !important;
+            transition: background-color 0.2s;
+        }
+
+        .fc-overlay .event__match:hover {
+            background-color: #1a1a1a;
+        }
+
+        .fc-overlay .event__match:last-child {
+            border-bottom: none;
+        }
+
+        /* Estilos específicos para elementos del partido */
+        .fc-overlay .event__stage {
+            grid-column: 1;
+            grid-row: 1 / span 2;
+            color: #ff4444 !important;
+            font-size: 11px;
+            text-align: center;
+            white-space: nowrap;
+        }
+
+        .fc-overlay .event__logo--home {
+            grid-column: 2;
+            grid-row: 1;
+            width: 20px;
+            height: 20px;
+        }
+
+        .fc-overlay .event__participant--home {
+            grid-column: 3;
+            grid-row: 1;
+            color: #ffffff !important;
+            font-size: 12px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .fc-overlay .event__score--home {
+            grid-column: 4;
+            grid-row: 1;
+            color: #ffffff !important;
+            font-size: 14px;
+            font-weight: bold;
+            text-align: center;
+        }
+
+        .fc-overlay .event__part--home {
+            grid-column: 5;
+            grid-row: 1;
+            color: #cccccc !important;
+            font-size: 11px;
+            text-align: center;
+        }
+
+        .fc-overlay .event__logo--away {
+            grid-column: 2;
+            grid-row: 2;
+            width: 20px;
+            height: 20px;
+        }
+
+        .fc-overlay .event__participant--away {
+            grid-column: 3;
+            grid-row: 2;
+            color: #ffffff !important;
+            font-size: 12px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .fc-overlay .event__score--away {
+            grid-column: 4;
+            grid-row: 2;
+            color: #ffffff !important;
+            font-size: 14px;
+            font-weight: bold;
+            text-align: center;
+        }
+
+        .fc-overlay .event__part--away {
+            grid-column: 5;
+            grid-row: 2;
+            color: #cccccc !important;
+            font-size: 11px;
+            text-align: center;
+        }
+
+        .fc-overlay .event__icon--tv {
+            grid-column: 6;
+            grid-row: 1 / span 2;
+            align-self: center;
+            justify-self: center;
+        }
+
+        /* Estilo para el botón de cerrar con cursor normal */
+        .fc-close-btn {
+            cursor: default !important;
+        }
+    `);
+
+    // --- VARIABLES GLOBALES ---
+    let isDragging = false;
+    let dragOffset = { x: 0, y: 0 };
+    let dragTarget = null;
+    let clickStartTime = 0;
+    let clickStartX = 0;
+    let clickStartY = 0;
+    const leagueOverlays = new Map();
+    const matchesInOverlays = new Map(); // Para rastrear partidos únicos por liga
+
+    // --- FUNCIONES DE CLONADO CON ESTILOS ---
+
+    // Función para obtener los estilos computados de un elemento y convertirlos a texto CSS
+    function getComputedStyleText(element) {
+        const computed = getComputedStyle(element);
+        let styleText = '';
+
+        // Copiar todas las propiedades CSS
+        for (let i = 0; i < computed.length; i++) {
+            const prop = computed[i];
+            // Excluir algunas propiedades que pueden causar problemas
+            if (!['width', 'height', 'position', 'top', 'left', 'right', 'bottom', 'z-index'].includes(prop)) {
+                const value = computed.getPropertyValue(prop);
+                if (value) {
+                    styleText += `${prop}:${value};`;
+                }
+            }
+        }
+
+        return styleText;
+    }
+
+    // Función para clonar un elemento y todos sus hijos con estilos computados
+    function cloneWithStyles(element) {
+        const clone = element.cloneNode(false);
+
+        // Aplicar estilos computados al clon
+        clone.setAttribute('style', getComputedStyleText(element));
+
+        // Clonar todos los hijos recursivamente
+        for (let i = 0; i < element.childNodes.length; i++) {
+            const child = element.childNodes[i];
+
+            if (child.nodeType === Node.ELEMENT_NODE) {
+                clone.appendChild(cloneWithStyles(child));
+            } else if (child.nodeType === Node.TEXT_NODE) {
+                clone.appendChild(document.createTextNode(child.textContent));
+            }
+        }
+
+        return clone;
+    }
+
+    // Función para obtener el identificador único de una liga
+    function getLeagueIdentifier(leagueHeader) {
+        if (!leagueHeader) return null;
+
+        const titleElement = leagueHeader.querySelector('.headerLeague__title-text');
+        const categoryElement = leagueHeader.querySelector('.headerLeague__category-text');
+
+        if (titleElement && categoryElement) {
+            return `${categoryElement.textContent}:${titleElement.textContent}`;
+        }
+
+        return leagueHeader.textContent;
+    }
+
+    // Función para obtener el identificador único de un partido
+    function getMatchIdentifier(matchElement) {
+        const homeTeam = matchElement.querySelector('.event__participant--home');
+        const awayTeam = matchElement.querySelector('.event__participant--away');
+
+        if (homeTeam && awayTeam) {
+            return `${homeTeam.textContent.trim()}_vs_${awayTeam.textContent.trim()}`;
+        }
+
+        return null;
+    }
+
+    // --- FUNCIONES PRINCIPALES ---
+
+    // Función para crear el botón circular en cada partido
+    function createOverlayButton(matchElement) {
+        if (matchElement.querySelector('.fc-overlay-btn')) {
+            return;
+        }
+
+        const btn = document.createElement('button');
+        btn.className = 'fc-overlay-btn';
+        btn.textContent = '⬚';
+        btn.title = 'Abrir overlay del partido';
+
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            e.preventDefault();
+            createOverlay(matchElement);
+        });
+
+        matchElement.style.position = 'relative';
+        matchElement.appendChild(btn);
+    }
+
+    // Función para crear o actualizar el overlay con el contenido del partido
+    function createOverlay(matchElement) {
+        const leagueContainer = matchElement.closest('.leagues--live') || matchElement.closest('.event');
+        let leagueHeader = null;
+
+        if (leagueContainer) {
+            leagueHeader = leagueContainer.querySelector('.headerLeague__body');
+        }
+
+        const leagueId = getLeagueIdentifier(leagueHeader);
+        const matchId = getMatchIdentifier(matchElement);
+
+        if (!matchId) return;
+
+        // Si ya existe un overlay para esta liga, verificar si el partido está duplicado
+        if (leagueId && leagueOverlays.has(leagueId)) {
+            const existingOverlay = leagueOverlays.get(leagueId);
+
+            // Verificar si el partido ya existe en el overlay
+            if (!matchesInOverlays.has(leagueId)) {
+                matchesInOverlays.set(leagueId, new Set());
+            }
+
+            const matchesSet = matchesInOverlays.get(leagueId);
+
+            if (matchesSet.has(matchId)) {
+                // El partido ya existe, solo traer el overlay al frente
+                bringToFront(existingOverlay);
+                return;
+            }
+
+            // Agregar el partido al overlay existente
+            matchesSet.add(matchId);
+            addMatchToOverlay(existingOverlay, matchElement);
+            bringToFront(existingOverlay);
+            return;
+        }
+
+        // Crear un nuevo overlay
+        const overlay = document.createElement('div');
+        overlay.className = 'fc-overlay always-on-top';
+
+        const overlayInner = document.createElement('div');
+        overlayInner.className = 'fc-overlay-inner';
+
+        // Agregar encabezado de la liga si existe
+        if (leagueHeader) {
+            const headerClone = cloneWithStyles(leagueHeader);
+
+            // Eliminar elementos no deseados del encabezado
+            const unwantedElements = headerClone.querySelectorAll('.headerLeague__star, .wizard__relativeWrapper, .headerLeague__actions');
+            unwantedElements.forEach(el => el.remove());
+
+            const headerContainer = document.createElement('div');
+            headerContainer.className = 'fc-overlay-header';
+            headerContainer.appendChild(headerClone);
+            overlayInner.appendChild(headerContainer);
+        }
+
+        // Contenedor para los partidos
+        const matchesContainer = document.createElement('div');
+        matchesContainer.className = 'fc-matches-container';
+        overlayInner.appendChild(matchesContainer);
+
+        overlay.appendChild(overlayInner);
+        document.body.appendChild(overlay);
+
+        // Guardar referencia al overlay y al partido
+        if (leagueId) {
+            leagueOverlays.set(leagueId, overlay);
+            matchesInOverlays.set(leagueId, new Set([matchId]));
+        }
+
+        // Agregar el partido al overlay
+        addMatchToOverlay(overlay, matchElement);
+
+        // --- CONFIGURAR DRAG AND DROP MEJORADO ---
+        const header = overlay.querySelector('.fc-overlay-header');
+        if (header) {
+            header.addEventListener('mousedown', function(e) {
+                if (e.button === 0) {
+                    isDragging = true;
+                    dragTarget = overlay;
+                    dragOffset.x = e.clientX - overlay.getBoundingClientRect().left;
+                    dragOffset.y = e.clientY - overlay.getBoundingClientRect().top;
+                    bringToFront(overlay);
+                    e.preventDefault();
+                }
+            });
+        }
+
+        // --- CERRAR CON BOTÓN DERECHO ---
+        overlay.addEventListener('contextmenu', function(e) {
+            if (leagueId) {
+                leagueOverlays.delete(leagueId);
+                matchesInOverlays.delete(leagueId);
+            }
+            document.body.removeChild(overlay);
+            e.preventDefault();
+        });
+
+        // --- PREVENIR CLIC SIMPLE EN EL CONTENEDOR ---
+        overlay.addEventListener('click', function(e) {
+            // Solo traer al frente si no se hizo clic en un partido
+            if (!e.target.closest('.event__match')) {
+                bringToFront(overlay);
+                e.preventDefault();
+                e.stopPropagation();
+            }
+        });
+    }
+
+    // Función para agregar un partido a un overlay existente
+    function addMatchToOverlay(overlay, matchElement) {
+        const matchesContainer = overlay.querySelector('.fc-matches-container');
+        if (!matchesContainer) return;
+
+        // Obtener el enlace original del partido
+        const originalLink = matchElement.querySelector('a.eventRowLink');
+        const matchUrl = originalLink ? originalLink.href : null;
+
+        // Clonar el partido completo con todos sus estilos
+        const matchClone = cloneWithStyles(matchElement);
+
+        // Remover el botón de overlay del clon para evitar duplicados
+        const btnClone = matchClone.querySelector('.fc-overlay-btn');
+        if (btnClone) {
+            btnClone.remove();
+        }
+
+        // Remover el enlace principal para prevenir navegación accidental
+        const rowLink = matchClone.querySelector('.eventRowLink');
+        if (rowLink) {
+            rowLink.remove();
+        }
+
+        // Remover botones no deseados
+        const unwantedElements = matchClone.querySelectorAll('.wcl-favorite_ggUc2, .anclar-partido-btn, .mi-boton-custom');
+        unwantedElements.forEach(el => el.remove());
+
+        // Asegurar que el overlay tenga el ancho adecuado
+        matchClone.style.width = '100%';
+        matchClone.style.boxSizing = 'border-box';
+        matchClone.style.cursor = 'pointer';
+
+        // Agregar evento de clic para abrir el partido
+        if (matchUrl) {
+            matchClone.addEventListener('click', function(e) {
+                e.stopPropagation();
+                window.open(matchUrl, '_blank');
+            });
+        }
+
+        matchesContainer.appendChild(matchClone);
+    }
+
+    // Función para traer un overlay al frente
+    function bringToFront(overlay) {
+        let maxZIndex = 2147483640;
+        document.querySelectorAll('.fc-overlay').forEach(ov => {
+            const zIndex = parseInt(window.getComputedStyle(ov).zIndex);
+            if (zIndex > maxZIndex) maxZIndex = zIndex;
+        });
+        overlay.style.zIndex = (maxZIndex + 1).toString();
+    }
+
+    // Manejadores globales para el drag and drop
+    document.addEventListener('mousemove', function(e) {
+        if (isDragging && dragTarget) {
+            dragTarget.style.left = (e.clientX - dragOffset.x) + 'px';
+            dragTarget.style.top = (e.clientY - dragOffset.y) + 'px';
+        }
+    });
+
+    document.addEventListener('mouseup', function() {
+        isDragging = false;
+        dragTarget = null;
+    });
+
+    // Función para agregar botones a todos los partidos visibles
+    function addButtonsToAllMatches() {
+        const matches = document.querySelectorAll('.event__match:not(.fc-processed)');
+        matches.forEach(function(match) {
+            match.classList.add('fc-processed');
+            createOverlayButton(match);
+        });
+    }
+
+    function handleExpandableSections() {
+        const expandButtons = document.querySelectorAll('[data-testid="wcl-accordionButton"]');
+        expandButtons.forEach(button => {
+            if (!button.hasAttribute('data-fc-listener')) {
+                button.setAttribute('data-fc-listener', 'true');
+                button.addEventListener('click', function() {
+                    setTimeout(addButtonsToAllMatches, 500);
+                });
+            }
+        });
+    }
+
+    // --- OBSERVAR CAMBIOS EN EL DOM ---
+    const observer = new MutationObserver(function(mutations) {
+        let shouldCheckMatches = false;
+
+        mutations.forEach(function(mutation) {
+            if (mutation.addedNodes.length) {
+                shouldCheckMatches = true;
+                mutation.addedNodes.forEach(function(node) {
+                    if (node.nodeType === 1 && node.classList && node.classList.contains('event__match')) {
+                        node.classList.add('fc-processed');
+                        createOverlayButton(node);
+                    }
+                });
+            }
+        });
+
+        if (shouldCheckMatches) {
+            setTimeout(addButtonsToAllMatches, 100);
+        }
+
+        handleExpandableSections();
+    });
+
+    // --- INICIALIZACIÓN ---
+    function init() {
+        addButtonsToAllMatches();
+        handleExpandableSections();
+
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+
+    // Mantener overlays en primer plano
+    setInterval(() => {
+        document.querySelectorAll('.fc-overlay').forEach(overlay => {
+            const currentZIndex = parseInt(window.getComputedStyle(overlay).zIndex);
+            if (currentZIndex < 2147483640) {
+                overlay.style.zIndex = '2147483640';
+            }
+        });
+    }, 1000);
+
+    setInterval(addButtonsToAllMatches, 2000);
+})();
