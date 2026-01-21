@@ -1,0 +1,479 @@
+// ==UserScript==
+// @name         Flashcore Overlay - TODOS LOS DEPORTES
+// @namespace    http://tampermonkey.net/
+// @version      16.0
+// @description  Overlay único para fútbol, tenis, basket, y todos los deportes
+// @author       TuNombre
+// @match        https://www.flashscore.es/*
+// @grant        GM_addStyle
+// @run-at       document-end
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    GM_addStyle(`
+        .fc-overlay-btn {
+            position: absolute;
+            right: 10px;
+            bottom: 10px;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        }
+        .fc-overlay-btn:hover {
+            background-color: #0056b3;
+        }
+        .fc-overlay {
+            position: fixed;
+            top: 50px;
+            left: 50px;
+            z-index: 2147483647;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.8);
+            background-color: #000000 !important;
+            min-width: 500px;
+            max-width: 700px;
+            max-height: 85vh;
+            border: 1px solid #333;
+        }
+        .fc-overlay-inner {
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: #000000;
+        }
+        .fc-overlay-main-header {
+            padding: 12px 15px;
+            background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
+            border-bottom: 2px solid #007bff;
+            color: white;
+            font-weight: bold;
+            font-size: 14px;
+            cursor: move !important;
+            text-align: center;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .fc-overlay-close {
+            background: #ff4444;
+            border: none;
+            color: white;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+        }
+        .fc-overlay-close:hover {
+            background: #cc0000;
+        }
+        .fc-league-section {
+            margin: 10px;
+            border: 1px solid #333;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+        .fc-league-header {
+            padding: 8px 12px;
+            background: #1a1a1a;
+            border-bottom: 1px solid #444;
+            color: #00aaff;
+            font-weight: bold;
+            font-size: 11px;
+        }
+        .fc-matches-container {
+            background-color: #000000;
+        }
+        .fc-overlay .headerLeague__star,
+        .fc-overlay .wizard__relativeWrapper,
+        .fc-overlay .headerLeague__actions,
+        .fc-overlay .anclar-partido-btn,
+        .fc-overlay .wcl-favorite_ggUc2,
+        .fc-overlay .wcl-pin_J5btx,
+        .fc-overlay .wcl-accordion_7Fi80,
+        .fc-overlay .mi-boton-custom {
+            display: none !important;
+        }
+        .fc-overlay a {
+            pointer-events: none !important;
+        }
+        .fc-overlay .eventRowLink {
+            display: none !important;
+        }
+        .fc-overlay .event__match {
+            padding: 10px;
+            background-color: #000000;
+            border-bottom: 1px solid #222;
+            cursor: pointer !important;
+            transition: background-color 0.2s;
+        }
+        .fc-overlay .event__match:hover {
+            background-color: #1a1a1a;
+        }
+        .fc-overlay .event__match:last-child {
+            border-bottom: none;
+        }
+        .fc-sport-icon {
+            margin-right: 5px;
+        }
+    `);
+
+    let isDragging = false;
+    let dragOffset = { x: 0, y: 0 };
+    let dragTarget = null;
+    let singleOverlay = null;
+    const leagueSections = new Map();
+    const matchesAdded = new Set();
+
+    function getComputedStyleText(element) {
+        const computed = getComputedStyle(element);
+        let styleText = '';
+        for (let i = 0; i < computed.length; i++) {
+            const prop = computed[i];
+            if (!['width', 'height', 'position', 'top', 'left', 'right', 'bottom', 'z-index'].includes(prop)) {
+                const value = computed.getPropertyValue(prop);
+                if (value) styleText += `${prop}:${value};`;
+            }
+        }
+        return styleText;
+    }
+
+    function cloneWithStyles(element) {
+        const clone = element.cloneNode(false);
+        clone.setAttribute('style', getComputedStyleText(element));
+        for (let i = 0; i < element.childNodes.length; i++) {
+            const child = element.childNodes[i];
+            if (child.nodeType === Node.ELEMENT_NODE) {
+                clone.appendChild(cloneWithStyles(child));
+            } else if (child.nodeType === Node.TEXT_NODE) {
+                clone.appendChild(document.createTextNode(child.textContent));
+            }
+        }
+        return clone;
+    }
+
+    function getSportIcon(url) {
+        if (!url) return '⚽';
+        if (url.includes('/futbol/')) return '⚽';
+        if (url.includes('/tenis/')) return '🎾';
+        if (url.includes('/baloncesto/')) return '🏀';
+        if (url.includes('/hockey/')) return '🏒';
+        if (url.includes('/balonmano/')) return '🤾';
+        if (url.includes('/voleibol/')) return '🏐';
+        if (url.includes('/rugby/')) return '🏉';
+        if (url.includes('/cricket/')) return '🏏';
+        if (url.includes('/beisbol/')) return '⚾';
+        if (url.includes('/hockey-sobre-hielo/')) return '🏒';
+        if (url.includes('/futbol-americano/')) return '🏈';
+        if (url.includes('/esports/')) return '🎮';
+        if (url.includes('/boxeo/')) return '🥊';
+        if (url.includes('/mma/')) return '🥋';
+        if (url.includes('/golf/')) return '⛳';
+        if (url.includes('/ciclismo/')) return '🚴';
+        if (url.includes('/motorsport/')) return '🏎️';
+        return '🏅';
+    }
+
+    function getLeagueInfo(matchElement) {
+        const allHeaders = document.querySelectorAll('.headerLeague');
+        const matchRect = matchElement.getBoundingClientRect();
+        const matchTop = matchRect.top + window.scrollY;
+        
+        let closestHeader = null;
+        let closestDistance = Infinity;
+        
+        allHeaders.forEach(headerElement => {
+            const headerRect = headerElement.getBoundingClientRect();
+            const headerTop = headerRect.top + window.scrollY;
+            
+            if (headerTop < matchTop) {
+                const distance = matchTop - headerTop;
+                if (distance < closestDistance) {
+                    closestDistance = distance;
+                    closestHeader = headerElement;
+                }
+            }
+        });
+        
+        if (closestHeader) {
+            const header = closestHeader.querySelector('.headerLeague__body');
+            if (header) {
+                const titleElement = header.querySelector('.headerLeague__title-text');
+                const categoryElement = header.querySelector('.headerLeague__category-text');
+                
+                if (titleElement && categoryElement) {
+                    const category = categoryElement.textContent.trim();
+                    const title = titleElement.textContent.trim();
+                    
+                    // Obtener icono del deporte
+                    const leagueLink = closestHeader.querySelector('a[href*="/"]');
+                    const sportIcon = leagueLink ? getSportIcon(leagueLink.href) : '🏅';
+                    
+                    const id = `${category}::${title}`;
+                    return { 
+                        id: id, 
+                        name: `${sportIcon} ${category} - ${title}`,
+                        sport: sportIcon
+                    };
+                }
+            }
+        }
+        
+        return { id: 'unknown', name: '📋 Sin clasificar', sport: '📋' };
+    }
+
+    function getMatchIdentifier(matchElement) {
+        // Para deportes individuales (tenis) y deportes de equipo
+        const homeParticipant = matchElement.querySelector('.event__homeParticipant, .event__participant--home');
+        const awayParticipant = matchElement.querySelector('.event__awayParticipant, .event__participant--away');
+        const time = matchElement.querySelector('.event__time');
+
+        if (homeParticipant && awayParticipant) {
+            const timeText = time ? time.textContent.trim() : '';
+            const home = homeParticipant.textContent.trim();
+            const away = awayParticipant.textContent.trim();
+            return `${timeText}_${home}_vs_${away}`;
+        }
+        
+        // Fallback: usar el ID del elemento si existe
+        if (matchElement.id) {
+            return matchElement.id;
+        }
+        
+        return null;
+    }
+
+    function createOverlayButton(matchElement) {
+        if (matchElement.querySelector('.fc-overlay-btn')) return;
+
+        const btn = document.createElement('button');
+        btn.className = 'fc-overlay-btn';
+        btn.textContent = '⬚';
+        btn.title = 'Añadir al overlay';
+
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            e.preventDefault();
+            addMatchToOverlay(matchElement);
+        });
+
+        matchElement.style.position = 'relative';
+        matchElement.appendChild(btn);
+    }
+
+    function createSingleOverlay() {
+        if (singleOverlay) return singleOverlay;
+
+        const overlay = document.createElement('div');
+        overlay.className = 'fc-overlay';
+
+        const overlayInner = document.createElement('div');
+        overlayInner.className = 'fc-overlay-inner';
+
+        const mainHeader = document.createElement('div');
+        mainHeader.className = 'fc-overlay-main-header';
+        
+        const titleSpan = document.createElement('span');
+        titleSpan.textContent = '⭐ MIS EVENTOS FAVORITOS';
+        mainHeader.appendChild(titleSpan);
+        
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'fc-overlay-close';
+        closeBtn.textContent = '✕';
+        closeBtn.title = 'Cerrar overlay';
+        closeBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            document.body.removeChild(overlay);
+            singleOverlay = null;
+            leagueSections.clear();
+            matchesAdded.clear();
+        });
+        mainHeader.appendChild(closeBtn);
+        
+        overlayInner.appendChild(mainHeader);
+
+        overlay.appendChild(overlayInner);
+        document.body.appendChild(overlay);
+
+        // Drag
+        mainHeader.addEventListener('mousedown', function(e) {
+            if (e.button === 0 && e.target !== closeBtn) {
+                isDragging = true;
+                dragTarget = overlay;
+                dragOffset.x = e.clientX - overlay.getBoundingClientRect().left;
+                dragOffset.y = e.clientY - overlay.getBoundingClientRect().top;
+                e.preventDefault();
+            }
+        });
+
+        // También cerrar con clic derecho
+        overlay.addEventListener('contextmenu', function(e) {
+            document.body.removeChild(overlay);
+            singleOverlay = null;
+            leagueSections.clear();
+            matchesAdded.clear();
+            e.preventDefault();
+        });
+
+        singleOverlay = overlay;
+        return overlay;
+    }
+
+    function getOrCreateLeagueSection(overlay, leagueId, leagueName) {
+        if (leagueSections.has(leagueId)) {
+            return leagueSections.get(leagueId);
+        }
+
+        const section = document.createElement('div');
+        section.className = 'fc-league-section';
+
+        const header = document.createElement('div');
+        header.className = 'fc-league-header';
+        header.textContent = leagueName;
+        section.appendChild(header);
+
+        const matchesContainer = document.createElement('div');
+        matchesContainer.className = 'fc-matches-container';
+        section.appendChild(matchesContainer);
+
+        const overlayInner = overlay.querySelector('.fc-overlay-inner');
+        overlayInner.appendChild(section);
+
+        leagueSections.set(leagueId, matchesContainer);
+        return matchesContainer;
+    }
+
+    function addMatchToOverlay(matchElement) {
+        const leagueInfo = getLeagueInfo(matchElement);
+        const matchId = getMatchIdentifier(matchElement);
+
+        if (!matchId) {
+            console.log('❌ No se pudo identificar el evento');
+            return;
+        }
+
+        if (matchesAdded.has(matchId)) {
+            console.log('ℹ️ Evento ya añadido');
+            const overlay = createSingleOverlay();
+            overlay.style.zIndex = '2147483647';
+            return;
+        }
+
+        console.log('✅ Añadiendo evento:', matchId);
+        console.log('🏆 Competición:', leagueInfo.name);
+
+        const overlay = createSingleOverlay();
+        const matchesContainer = getOrCreateLeagueSection(overlay, leagueInfo.id, leagueInfo.name);
+
+        const originalLink = matchElement.querySelector('a.eventRowLink');
+        const matchUrl = originalLink ? originalLink.href : null;
+
+        const matchClone = cloneWithStyles(matchElement);
+
+        const btnClone = matchClone.querySelector('.fc-overlay-btn');
+        if (btnClone) btnClone.remove();
+
+        const rowLink = matchClone.querySelector('.eventRowLink');
+        if (rowLink) rowLink.remove();
+
+        const unwantedElements = matchClone.querySelectorAll('.wcl-favorite_ggUc2, .anclar-partido-btn, .mi-boton-custom, .fc-debug-btn');
+        unwantedElements.forEach(el => el.remove());
+
+        matchClone.style.width = '100%';
+        matchClone.style.boxSizing = 'border-box';
+        matchClone.style.cursor = 'pointer';
+
+        if (matchUrl) {
+            matchClone.addEventListener('click', function(e) {
+                e.stopPropagation();
+                window.open(matchUrl, '_blank');
+            });
+        }
+
+        matchesContainer.appendChild(matchClone);
+        matchesAdded.add(matchId);
+
+        overlay.style.zIndex = '2147483647';
+    }
+
+    document.addEventListener('mousemove', function(e) {
+        if (isDragging && dragTarget) {
+            dragTarget.style.left = (e.clientX - dragOffset.x) + 'px';
+            dragTarget.style.top = (e.clientY - dragOffset.y) + 'px';
+        }
+    });
+
+    document.addEventListener('mouseup', function() {
+        isDragging = false;
+        dragTarget = null;
+    });
+
+    function addButtonsToAllMatches() {
+        const matches = document.querySelectorAll('.event__match:not(.fc-processed)');
+        matches.forEach(function(match) {
+            match.classList.add('fc-processed');
+            createOverlayButton(match);
+        });
+    }
+
+    function handleExpandableSections() {
+        const expandButtons = document.querySelectorAll('[data-testid="wcl-accordionButton"]');
+        expandButtons.forEach(button => {
+            if (!button.hasAttribute('data-fc-listener')) {
+                button.setAttribute('data-fc-listener', 'true');
+                button.addEventListener('click', function() {
+                    setTimeout(addButtonsToAllMatches, 500);
+                });
+            }
+        });
+    }
+
+    const observer = new MutationObserver(function(mutations) {
+        let shouldCheckMatches = false;
+        mutations.forEach(function(mutation) {
+            if (mutation.addedNodes.length) {
+                shouldCheckMatches = true;
+            }
+        });
+        if (shouldCheckMatches) {
+            setTimeout(addButtonsToAllMatches, 100);
+        }
+        handleExpandableSections();
+    });
+
+    function init() {
+        console.log('🚀 Flashcore Overlay v16.0 - Todos los deportes');
+        setTimeout(() => {
+            addButtonsToAllMatches();
+            handleExpandableSections();
+        }, 2000);
+        
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+
+    setInterval(addButtonsToAllMatches, 3000);
+})();
