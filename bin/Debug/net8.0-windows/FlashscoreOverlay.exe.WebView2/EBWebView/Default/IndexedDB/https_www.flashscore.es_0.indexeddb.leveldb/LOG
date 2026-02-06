@@ -1,0 +1,14 @@
+2026/01/23-13:46:23.917 6610 Reusing MANIFEST C:\Users\jaume\Documents\DAM2\SGE\FlashscoreOverlay\bin\Debug\net8.0-windows\FlashscoreOverlay.exe.WebView2\EBWebView\Default\IndexedDB\https_www.flashscore.es_0.indexeddb.leveldb/MANIFEST-000001
+2026/01/23-13:46:23.917 6610 Recovering log #53
+2026/01/23-13:46:23.917 6610 Reusing old log C:\Users\jaume\Documents\DAM2\SGE\FlashscoreOverlay\bin\Debug\net8.0-windows\FlashscoreOverlay.exe.WebView2\EBWebView\Default\IndexedDB\https_www.flashscore.es_0.indexeddb.leveldb/000053.log 
+2026/01/23-13:46:23.918 6610 Delete type=2 #51
+2026/01/23-13:46:24.052 694c Level-0 table #58: started
+2026/01/23-13:46:24.054 694c Level-0 table #58: 637 bytes OK
+2026/01/23-13:46:24.055 694c Delete type=0 #53
+2026/01/23-13:46:24.055 6610 Manual compaction at level-0 from '\x00\x11\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x12\x00\x00\x00' @ 0 : 0; will stop at '\x00\x11\x00\x00\x05' @ 311 : 1
+2026/01/23-13:46:24.056 6610 Compacting 1@0 + 1@1 files
+2026/01/23-13:46:24.057 6610 Generated table #59@0: 23 keys, 755 bytes
+2026/01/23-13:46:24.057 6610 Compacted 1@0 + 1@1 files => 755 bytes
+2026/01/23-13:46:24.058 6610 compacted to: files[ 0 1 1 0 0 0 0 ]
+2026/01/23-13:46:24.058 6610 Delete type=2 #58
+2026/01/23-13:46:24.058 6610 Manual compaction at level-0 from '\x00\x11\x00\x00\x05' @ 311 : 1 .. '\x00\x12\x00\x00\x00' @ 0 : 0; will stop at (end)
