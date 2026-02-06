@@ -1,7 +1,7 @@
 # FarliProyectFlashScore
 
 
-https://drive.google.com/file/d/1RrxtDKPS0kzwyyg3LIPfsqVCEckHMVpu/view?usp=drive_link
+https://drive.google.com/file/d/1RrxtDKPS0kzwyyg3LIPfsqVCEckHMVpu/view?usp=sharing
 Proyecto Flash Score desarrollado colaborativamente por el equipo Mr Coca, Ivan y Fa.
 
 ## 📋 Descripción
