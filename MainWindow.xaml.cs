@@ -328,6 +328,12 @@ namespace FlashscoreOverlay
         [JsonProperty("url")]
         public string? Url { get; set; }
 
+        [JsonProperty("homeHref")]
+        public string? HomeHref { get; set; }
+
+        [JsonProperty("awayHref")]
+        public string? AwayHref { get; set; }
+
         [JsonProperty("html")]
         public string? Html { get; set; }
 

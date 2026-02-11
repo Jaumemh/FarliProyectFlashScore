@@ -120,6 +120,27 @@ function extractMatchMid(url) {
     }
 }
 
+// Extract potential team page hrefs for home/away from a match element
+function getTeamHref(matchElement, participantSelector) {
+    try {
+        const anchor = matchElement.querySelector(participantSelector + ' a[href], ' + participantSelector + ' [href]');
+        if (anchor) {
+            const h = anchor.getAttribute('href');
+            if (h) return h.startsWith('http') ? h : `https://www.flashscore.es${h}`;
+        }
+        const anchors = Array.from(matchElement.querySelectorAll('a[href]'));
+        for (const a of anchors) {
+            const h = a.getAttribute('href');
+            if (/\/equipo\//i.test(h) || /\/team\//i.test(h)) {
+                return h.startsWith('http') ? h : `https://www.flashscore.es${h}`;
+            }
+        }
+    } catch (e) {
+        // ignore
+    }
+    return '';
+}
+
 function getMatchData(matchElement) {
     const linkElement = matchElement.querySelector('.eventRowLink, a[href*="/partido/"]');
     let matchUrl = '';
@@ -156,6 +177,8 @@ function getMatchData(matchElement) {
             homeLogo: matchElement.querySelector('img[alt]')?.src || '',
             awayLogo: matchElement.querySelectorAll('img[alt]')[1]?.src || '',
             url: matchUrl,
+            homeHref: getTeamHref(matchElement, '.event__participant--home'),
+            awayHref: getTeamHref(matchElement, '.event__participant--away'),
             html: matchHtml
         };
     }
