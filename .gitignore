@@ -1,0 +1,26 @@
+# Build folders
+bin/
+obj/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+
+# Executables
+*.exe
+*.dll
+*.pdb
+
+# Logs
+*.log
+
+# WebView2 cache
+*.WebView2/
+
+# Rider
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
