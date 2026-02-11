@@ -55,7 +55,8 @@ namespace FlashscoreOverlay
                     MatchTitle.Inlines.Add(new System.Windows.Documents.Run("· "));
                     var link = new System.Windows.Documents.Hyperlink(new System.Windows.Documents.Run(competition.Title))
                     {
-                        Cursor = System.Windows.Input.Cursors.Hand
+                        Foreground = MatchTitle.Foreground,
+                        TextDecorations = new System.Windows.TextDecorationCollection()
                     };
                     link.Click += (s, e) =>
                     {
