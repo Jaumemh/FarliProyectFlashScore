@@ -44,6 +44,24 @@ namespace FlashscoreOverlay
             _ = InitializeAsync();
         }
 
+        private string? ResolveMatchHrefFromData(string? html)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(html)) return null;
+                var pattern = "<a[^>]+href=[\\'\\\"](?<h>[^\\'\\\"]*(?:/partido/)[^\\'\\\"]*)[\\'\\\"][^>]*>";
+                var rx = new Regex(pattern, RegexOptions.IgnoreCase | RegexOptions.Singleline);
+                var m = rx.Match(html);
+                if (m.Success)
+                {
+                    var found = m.Groups["h"].Value;
+                    return found.StartsWith("http") ? found : "https://www.flashscore.es" + found;
+                }
+            }
+            catch { }
+            return null;
+        }
+
         private void BuildOverlayTitleWithLink()
         {
             try
@@ -59,21 +77,30 @@ namespace FlashscoreOverlay
                         Foreground = MatchTitle.Foreground,
                         TextDecorations = new System.Windows.TextDecorationCollection()
                     };
-                    link.Click += (s, e) =>
+                    link.Click += async (s, e) =>
                     {
                         try
                         {
                             var url = competition?.HrefWithParam ?? competition?.Href;
-                            if (!string.IsNullOrWhiteSpace(url) && !string.IsNullOrWhiteSpace(tabId))
+                            if (string.IsNullOrWhiteSpace(url)) return;
+
+                            // Try to resolve a better tab (clasificación -> cuadro -> tabla en directo) before navigating
+                            string chosen = url;
+                            try
                             {
-                                // Set a pending command for the original browser tab so it navigates in-place
-                                var main = Application.Current?.MainWindow as MainWindow;
-                                main?.SetPendingCommandForTab(tabId, new BrowserCommand { Action = "navigate", Href = url });
+                                var resolved = await FindBestCompetitionTabAsync(url);
+                                if (!string.IsNullOrWhiteSpace(resolved)) chosen = resolved;
                             }
-                            else if (!string.IsNullOrWhiteSpace(url))
+                            catch { /* don't block navigation on errors */ }
+
+                            if (!string.IsNullOrWhiteSpace(chosen) && !string.IsNullOrWhiteSpace(tabId))
                             {
-                                // fallback: open externally
-                                Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+                                var main = Application.Current?.MainWindow as MainWindow;
+                                main?.SetPendingCommandForTab(tabId, new BrowserCommand { Action = "navigate", Href = chosen });
+                            }
+                            else if (!string.IsNullOrWhiteSpace(chosen))
+                            {
+                                Process.Start(new ProcessStartInfo(chosen) { UseShellExecute = true });
                             }
                         }
                         catch (Exception ex)
@@ -388,26 +415,75 @@ namespace FlashscoreOverlay
 
         // Click handlers for team area — send navigate message to host (no visual changes)
         try {
-            function sendNavigate(href) {
-                if (!href) return;
+            function sendNavigate(href, name) {
+                // Prefer navigating to the exact match page first so the page can auto-click
+                // the team anchor (fc_open_team). If match href isn't available, fall back
+                // to navigating directly to the team's href when present.
+                try {
+                    const matchHref = root?.getAttribute('data-match-href') || '';
+                    if (matchHref) {
+                        try {
+                            const u = new URL(matchHref, window.location.origin);
+                            if (name) u.searchParams.set('fc_open_team', name);
+                            if (href) u.searchParams.set('fc_open_href', href);
+                            const target = u.toString();
+                            if (window.chrome?.webview) {
+                                window.chrome.webview.postMessage({ type: 'navigate', href: target });
+                            } else {
+                                window.location.href = target;
+                            }
+                            return;
+                        } catch (e) { /* fallthrough */ }
+                    }
+                } catch (e) { /* ignore */ }
+
+                // If no match page available, navigate directly to team href if provided
+                if (href) {
+                    if (window.chrome?.webview) {
+                        window.chrome.webview.postMessage({ type: 'navigate', href: href });
+                    } else {
+                        try { window.open(href, '_blank'); } catch (e) {}
+                    }
+                    return;
+                }
+
+                // fallback: request host to open team by name (will perform search)
+                if (!name) return;
                 if (window.chrome?.webview) {
-                    window.chrome.webview.postMessage({ type: 'navigate', href: href });
+                    window.chrome.webview.postMessage({ type: 'openTeam', name: name });
                 } else {
-                    try { window.open(href, '_blank'); } catch (e) {}
+                    try {
+                        const q = encodeURIComponent(name.trim());
+                        window.open('https://www.flashscore.es/search/?q=' + q, '_blank');
+                    } catch (e) {}
                 }
             }
 
-            // prefer data-href attribute (more robust)
-            homeNameEl.addEventListener('click', () => sendNavigate(homeNameEl.getAttribute('data-href')));
-            awayNameEl.addEventListener('click', () => sendNavigate(awayNameEl.getAttribute('data-href')));
+            // prefer data-href attribute (more robust) and avoid bubbling to card click
+            homeNameEl.addEventListener('click', (ev) => { ev.stopPropagation(); sendNavigate(homeNameEl.getAttribute('data-href'), homeNameEl.textContent); });
+            awayNameEl.addEventListener('click', (ev) => { ev.stopPropagation(); sendNavigate(awayNameEl.getAttribute('data-href'), awayNameEl.textContent); });
 
             const homeRow = homeNameEl.closest('.team-row');
             const awayRow = awayNameEl.closest('.team-row');
-            if (homeRow) homeRow.addEventListener('click', () => sendNavigate(homeNameEl.getAttribute('data-href')));
-            if (awayRow) awayRow.addEventListener('click', () => sendNavigate(awayNameEl.getAttribute('data-href')));
+            if (homeRow) homeRow.addEventListener('click', (ev) => { ev.stopPropagation(); sendNavigate(homeNameEl.getAttribute('data-href'), homeNameEl.textContent); });
+            if (awayRow) awayRow.addEventListener('click', (ev) => { ev.stopPropagation(); sendNavigate(awayNameEl.getAttribute('data-href'), awayNameEl.textContent); });
 
-            if (homeLogoEl) homeLogoEl.addEventListener('click', () => sendNavigate(homeNameEl.getAttribute('data-href')));
-            if (awayLogoEl) awayLogoEl.addEventListener('click', () => sendNavigate(awayNameEl.getAttribute('data-href')));
+            if (homeLogoEl) homeLogoEl.addEventListener('click', (ev) => { ev.stopPropagation(); sendNavigate(homeNameEl.getAttribute('data-href'), homeNameEl.textContent); });
+            if (awayLogoEl) awayLogoEl.addEventListener('click', (ev) => { ev.stopPropagation(); sendNavigate(awayNameEl.getAttribute('data-href'), awayNameEl.textContent); });
+
+            // click on the card navigates to the exact match page
+            root.addEventListener('click', () => {
+                try {
+                    const m = root.getAttribute('data-match-href');
+                    if (m) {
+                        if (window.chrome?.webview) {
+                            window.chrome.webview.postMessage({ type: 'navigate', href: m });
+                        } else {
+                            window.location.href = m;
+                        }
+                    }
+                } catch (e) { }
+            });
         } catch (e) {
             // ignore if elements not available
         }
@@ -488,6 +564,7 @@ namespace FlashscoreOverlay
             // expose current hrefs as data attributes so click handlers can use them
             try { homeNameEl.setAttribute('data-href', data?.homeHref || ''); } catch (e) {}
             try { awayNameEl.setAttribute('data-href', data?.awayHref || ''); } catch (e) {}
+            try { root.setAttribute('data-match-href', data?.matchHref || ''); } catch (e) {}
             homeLogoEl.src = data?.homeLogo || '';
             awayLogoEl.src = data?.awayLogo || '';
 
@@ -541,6 +618,8 @@ namespace FlashscoreOverlay
     </script>
 </body>
 </html>";
+            // replace preview placeholder with actual initial state
+            try { html = html.Replace("data-state='preview'", "data-state='" + initialData.State + "'"); } catch { }
             return html;
         }
 
@@ -590,6 +669,27 @@ namespace FlashscoreOverlay
                 return string.Empty;
             }
 
+            // Ensure we expose the match URL (matchHref) so overlay can navigate to the match page
+            string ResolveMatchHref()
+            {
+                if (!string.IsNullOrWhiteSpace(matchData.Url)) return matchData.Url!;
+                try
+                {
+                    var html = matchData.Html ?? string.Empty;
+                    if (string.IsNullOrWhiteSpace(html)) return string.Empty;
+                    var pattern = "<a[^>]+href=[\\'\\\"](?<h>[^\\'\\\"]*(?:/partido/)[^\\'\\\"]*)[\\'\\\"][^>]*>";
+                    var rx = new Regex(pattern, RegexOptions.IgnoreCase | RegexOptions.Singleline);
+                    var m = rx.Match(html);
+                    if (m.Success)
+                    {
+                        var found = m.Groups["h"].Value;
+                        return found.StartsWith("http") ? found : "https://www.flashscore.es" + found;
+                    }
+                }
+                catch { }
+                return string.Empty;
+            }
+
             return new OverlayDisplayData
             {
                 TimeLabel = string.IsNullOrWhiteSpace(timeLabel) ? "—" : timeLabel,
@@ -601,6 +701,7 @@ namespace FlashscoreOverlay
                 AwayLogo = matchData.AwayLogo ?? string.Empty,
                 HomeHref = ResolveHref(matchData.HomeHref, matchData.HomeTeam) ?? string.Empty,
                 AwayHref = ResolveHref(matchData.AwayHref, matchData.AwayTeam) ?? string.Empty,
+                MatchHref = ResolveMatchHref() ?? string.Empty,
                 HomeScore = string.IsNullOrWhiteSpace(homeScoreSource) ? string.Empty : homeScoreSource.Trim(),
                 AwayScore = string.IsNullOrWhiteSpace(awayScoreSource) ? string.Empty : awayScoreSource.Trim(),
                 HasScore = hasScore,
@@ -631,7 +732,6 @@ namespace FlashscoreOverlay
             return state switch
             {
                 "finished" => "FINALIZADO",
-                "preview" => "PREVIEW",
                 _ => string.Empty
             };
         }
@@ -799,6 +899,142 @@ namespace FlashscoreOverlay
             return document.QuerySelector(".event__match");
         }
 
+        private async Task<string?> ResolveTeamHrefAsync(string teamName)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(teamName)) return null;
+
+                // If match already has hrefs, prefer them when the text matches
+                if (!string.IsNullOrWhiteSpace(match.HomeHref) && match.HomeTeam != null && match.HomeTeam.IndexOf(teamName, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return match.HomeHref;
+                }
+                if (!string.IsNullOrWhiteSpace(match.AwayHref) && match.AwayTeam != null && match.AwayTeam.IndexOf(teamName, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return match.AwayHref;
+                }
+
+                // If match page available, fetch it and look for /equipo/ or /team/ anchors that contain the team name
+                if (string.IsNullOrWhiteSpace(match.Url)) return null;
+
+                using var req = new HttpRequestMessage(HttpMethod.Get, match.Url);
+                req.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36");
+                var resp = await HttpClient.SendAsync(req);
+                resp.EnsureSuccessStatusCode();
+                var html = await resp.Content.ReadAsStringAsync();
+                var parser = new HtmlParser();
+                var doc = await parser.ParseDocumentAsync(html);
+
+                var rx = new Regex("<a[^>]+href=[\\'\\\"](?<h>[^\\'\\\"]*(?:/equipo/|/team/)[^\\'\\\"]*)[\\'\\\"][^>]*>(?<t>.*?)</a>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+                foreach (Match m in rx.Matches(html))
+                {
+                    var text = Regex.Replace(m.Groups["t"].Value, "<.*?>", string.Empty).Trim();
+                    if (!string.IsNullOrWhiteSpace(text) && text.IndexOf(teamName, StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        var found = m.Groups["h"].Value;
+                        return found.StartsWith("http") ? found : "https://www.flashscore.es" + found;
+                    }
+                }
+
+                // As last resort, scan anchors in parsed document
+                var anchors = doc.QuerySelectorAll("a[href]");
+                foreach (var a in anchors)
+                {
+                    try
+                    {
+                        var h = a.GetAttribute("href") ?? string.Empty;
+                        var t = (a.TextContent ?? string.Empty).Trim();
+                        if (string.IsNullOrWhiteSpace(h)) continue;
+                        if (!Regex.IsMatch(h, "/(equipo|team)/", RegexOptions.IgnoreCase)) continue;
+                        if (!string.IsNullOrWhiteSpace(t) && t.IndexOf(teamName, StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            return h.StartsWith("http") ? h : "https://www.flashscore.es" + h;
+                        }
+                    }
+                    catch { }
+                }
+
+                return null;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error resolviendo href de equipo: {ex.Message}");
+                return null;
+            }
+        }
+
+        private async Task<string?> FindBestCompetitionTabAsync(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url)) return null;
+            try
+            {
+                using var req = new HttpRequestMessage(HttpMethod.Get, url);
+                // set a browser-like user-agent and headers to improve compatibility with Flashscore
+                req.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36");
+                req.Headers.AcceptLanguage.ParseAdd("es-ES,es;q=0.9,en;q=0.8");
+                var response = await HttpClient.SendAsync(req);
+                response.EnsureSuccessStatusCode();
+                var html = await response.Content.ReadAsStringAsync();
+                var parser = new HtmlParser();
+                var doc = await parser.ParseDocumentAsync(html);
+
+                // Normalize search tokens in order of preference
+                var searchGroups = new[]
+                {
+                    new[] { "clasific" }, // clasificación / clasificaciôn
+                    new[] { "cuadro", "bracket" }, // bracket / cuadro
+                    new[] { "tabla en directo", "tabla en vivo", "tabla" }, // tabla en directo / tabla
+                    new[] { "standings", "table" }
+                };
+
+                string MakeAbsolute(string href)
+                {
+                    if (string.IsNullOrWhiteSpace(href)) return href;
+                    href = href.Trim();
+                    if (href.StartsWith("javascript:", StringComparison.OrdinalIgnoreCase)) return string.Empty;
+                    if (href.StartsWith("http", StringComparison.OrdinalIgnoreCase)) return href;
+                    try
+                    {
+                        var baseUri = new Uri(url);
+                        var abs = new Uri(baseUri, href).ToString();
+                        return abs;
+                    }
+                    catch { return href; }
+                }
+
+                var anchors = doc.QuerySelectorAll("a[href]");
+                foreach (var group in searchGroups)
+                {
+                    foreach (var a in anchors)
+                    {
+                        try
+                        {
+                            var href = a.GetAttribute("href") ?? string.Empty;
+                            var text = (a.TextContent ?? string.Empty).Trim();
+                            var combined = (href + " " + text).ToLowerInvariant();
+                            foreach (var token in group)
+                            {
+                                if (combined.Contains(token, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    var abs = MakeAbsolute(href);
+                                    if (!string.IsNullOrWhiteSpace(abs)) return abs;
+                                }
+                            }
+                        }
+                        catch { }
+                    }
+                }
+
+                return null;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error resolviendo pestañas de competición: {ex.Message}");
+                return null;
+            }
+        }
+
         private void UpdateOverlayPayload(OverlayDisplayData data)
         {
             try
@@ -833,7 +1069,7 @@ namespace FlashscoreOverlay
             }
         }
 
-        private void CoreWebView2_WebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
+        private async void CoreWebView2_WebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
         {
             try
             {
@@ -862,6 +1098,77 @@ namespace FlashscoreOverlay
                     catch (Exception ex)
                     {
                         System.Diagnostics.Debug.WriteLine($"Error navegando desde overlay: {ex.Message}");
+                    }
+                }
+                else if (payload.Type == "openTeam")
+                {
+                    try
+                    {
+                        var name = payload.Name?.Trim() ?? string.Empty;
+                        if (string.IsNullOrWhiteSpace(name)) return;
+                        // Prefer navigating to the exact match page (if available) and instruct it to auto-click
+                        // the team anchor via query params. This avoids opening the competition clasificación.
+                        string matchTarget = null;
+                        try
+                        {
+                            // prefer the explicit match URL if we have it
+                            if (!string.IsNullOrWhiteSpace(match.Url)) matchTarget = match.Url;
+                            // otherwise try to extract from captured HTML
+                            if (string.IsNullOrWhiteSpace(matchTarget))
+                            {
+                                var resolved = ResolveMatchHrefFromData(match.Html);
+                                if (!string.IsNullOrWhiteSpace(resolved)) matchTarget = resolved;
+                            }
+                        }
+                        catch { }
+
+                        if (!string.IsNullOrWhiteSpace(matchTarget))
+                        {
+                            try
+                            {
+                                var u = new UriBuilder(matchTarget);
+                                var qp = System.Web.HttpUtility.ParseQueryString(u.Query);
+                                qp["fc_open_team"] = name;
+                                // optional: provide fallback direct href if already known
+                                var direct = await ResolveTeamHrefAsync(name);
+                                if (!string.IsNullOrWhiteSpace(direct)) qp["fc_open_href"] = direct;
+                                u.Query = qp.ToString();
+                                var target = u.ToString();
+
+                                if (!string.IsNullOrWhiteSpace(tabId))
+                                {
+                                    var main = Application.Current?.MainWindow as MainWindow;
+                                    main?.SetPendingCommandForTab(tabId, new BrowserCommand { Action = "navigate", Href = target });
+                                }
+                                else
+                                {
+                                    Process.Start(new ProcessStartInfo(target) { UseShellExecute = true });
+                                }
+                                return;
+                            }
+                            catch { /* fallthrough to resolve directly */ }
+                        }
+
+                        // Fallback: try to resolve direct team href and navigate
+                        var teamHref = await ResolveTeamHrefAsync(name);
+                        if (string.IsNullOrWhiteSpace(teamHref))
+                        {
+                            teamHref = "https://www.flashscore.es/search/?q=" + Uri.EscapeDataString(name);
+                        }
+
+                        if (!string.IsNullOrWhiteSpace(tabId))
+                        {
+                            var main = Application.Current?.MainWindow as MainWindow;
+                            main?.SetPendingCommandForTab(tabId, new BrowserCommand { Action = "navigate", Href = teamHref });
+                        }
+                        else
+                        {
+                            Process.Start(new ProcessStartInfo(teamHref) { UseShellExecute = true });
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Error abriendo ficha del equipo: {ex.Message}");
                     }
                 }
             }
@@ -931,6 +1238,9 @@ namespace FlashscoreOverlay
             [JsonProperty("homeHref")]
             public string HomeHref { get; set; } = string.Empty;
 
+            [JsonProperty("matchHref")]
+            public string MatchHref { get; set; } = string.Empty;
+
             [JsonProperty("awayHref")]
             public string AwayHref { get; set; } = string.Empty;
 
@@ -959,6 +1269,8 @@ namespace FlashscoreOverlay
             public string? Type { get; set; }
             [JsonProperty("href")]
             public string? Href { get; set; }
+            [JsonProperty("name")]
+            public string? Name { get; set; }
         }
     }
 }
