@@ -1,15 +1,21 @@
 # Flashscore Overlay - Aplicación WPF
 
-Esta aplicación WPF permite visualizar los partidos de Flashscore.es en un overlay independiente que se mantiene siempre en primer plano.
+Esta aplicación WPF actúa como un host WebView2 que abre cada partido seleccionado de Flashscore.es en ventanas flotantes independientes, siempre encima del resto de aplicaciones.
 
 ## Características
 
-- ✅ Navegador integrado con WebView2
-- ✅ Inyección automática del script personalizado
-- ✅ Interfaz moderna y oscura
-- ✅ Overlay siempre en primer plano
-- ✅ Actualización automática de partidos
-- ✅ Ventana arrastrable y redimensionable
+- ✓ Ventanas individuales por partido usando Microsoft Edge (Chromium) a través de WebView2.
+- ✓ Cada overlay aísla el contenedor exacto del partido y elimina el resto del DOM.
+- ✓ Actualización interna cada 20 segundos mediante `fetch` en segundo plano.
+- ✓ Ventanas borderless, topmost, ajustadas al tamaño real del HTML del partido.
+- ✓ Comunicación directa con un script de Tampermonkey para abrir/cerrar ventanas al hacer clic en los partidos.
+- ✓ Clic derecho dentro del overlay cierra esa ventana sin tocar las demás.
+
+## Arquitectura de la solución
+
+1. **App WPF**: el `MainWindow` se oculta al iniciar y expone un servidor HTTP local en `http://localhost:8080/` para escuchar comandos desde el navegador.
+2. **TampermonkeyScript.js**: inserta un botón (📑) en cada partido de Flashscore, detecta `matchId`, `matchMid` y la URL del evento, y manda el payload al servidor cuando se pulsa.
+3. **OverlayWindow**: cada comando `addMatch` crea una ventana WebView2 separada que carga la URL real, ejecuta un script para aislar solo el nodo correcto y reajusta su tamaño automáticamente.
 
 ## Requisitos
 
@@ -17,15 +23,15 @@ Esta aplicación WPF permite visualizar los partidos de Flashscore.es en un over
    - Descargar: https://dotnet.microsoft.com/download
 
 2. **WebView2 Runtime**
-   - Generalmente ya instalado en Windows 10/11
-   - Si no: https://developer.microsoft.com/microsoft-edge/webview2/
+   - Generalmente ya viene instalado en Windows 10/11
+   - Si falta: https://developer.microsoft.com/microsoft-edge/webview2/
 
 ## Instalación y Ejecución
 
 ### Opción 1: Desde Visual Studio
 
-1. Abre Visual Studio 2022
-2. Abre el proyecto `FlashscoreOverlay.csproj`
+1. Abre Visual Studio (2022 o 2023)
+2. Carga `FlashscoreOverlay.csproj`
 3. Presiona F5 o clic en "Iniciar"
 
 ### Opción 2: Desde la terminal
@@ -44,27 +50,32 @@ cd "c:\Users\jaume\Documents\DAM2\SGE\FlashscoreOverlay"
 dotnet publish -c Release -r win-x64 --self-contained false
 ```
 
-El ejecutable estará en: `bin\Release\net8.0-windows\win-x64\publish\FlashscoreOverlay.exe`
+El ejecutable queda en: `bin\Release\net8.0-windows\win-x64\publish\FlashscoreOverlay.exe`
 
 ## Uso
 
-1. **Iniciar la aplicación**: Se abrirá una ventana con Flashscore.es cargado
-2. **Esperar carga**: El script se inyectará automáticamente
-3. **Buscar partidos**: Navega por Flashscore normalmente
-4. **Añadir al overlay**: Verás un botón circular rojo (📌) en cada partido
-5. **Clic en el botón**: El partido se añadirá al overlay (el botón se pondrá azul)
-6. **Gestionar overlay**: 
-   - Arrastrar: Click y mantener en la barra de título
-   - Cerrar: Click en la X roja
-   - Refrescar: Click en 🔄
-   - Anclar/Desanclar: Click en 📌
+1. Ejecuta la aplicación WPF; la ventana principal se ocultará, pero el servidor HTTP quedará activo y escuchando en `localhost:8080`.
+2. Instala y activa `TampermonkeyScript.js` en Flashscore.es (el archivo está junto a este README) y abre una sección de partidos.
+3. Cada partido muestra un botón rojo (📑). Haz clic para abrir un overlay flotante: la ventana carga la URL real y muestra exclusivamente el contenedor del partido.
+4. El botón cambia a azul mientras el overlay esté abierto; vuelve a pulsarlo para cerrarlo (toggle).
+5. Puedes abrir tantos partidos como quieras; cada uno vive en su propio overlay y se actualiza automáticamente.
+
+## Overlay WebView2
+
+- Cada overlay tiene un header pequeño con título, botón de recarga (↺) y cierre (✕). Arrastra desde el encabezado para moverlo.
+- Dentro del WebView2 se ejecuta un script que detecta el `matchId` y/o el `matchMid`, elimina el resto del DOM y mantiene solo el nodo deseado.
+- Se exportan los bounds del nodo al host para ajustar el ancho/alto de la ventana y conservar el mismo tamaño que en Flashscore.
+- Un `setInterval` cada 20 segundos dispara un `fetch` sobre la misma URL y actualiza el HTML interno del nodo, sin recargar toda la vista.
+- Un clic derecho dentro del contenido manda un mensaje a la app para cerrar solo ese overlay, sin afectar a los demás.
+- Las ventanas comparten sesión WebView2 por defecto, así que cookies e inicio de sesión se mantienen.
 
 ## Controles
 
-- **🔄 Refrescar**: Recarga la página de Flashscore
-- **📌 Pin**: Mantiene la ventana siempre en primer plano (activo por defecto)
-- **− Minimizar**: Minimiza la ventana
-- **✕ Cerrar**: Cierra la aplicación
+- **↺ Recargar**: recarga la misma URL dentro del overlay.
+- **✕ Cerrar**: cierra ese overlay individual.
+- **Botón Tampermonkey (📑)**: toggle para abrir/cerrar el overlay correspondiente.
+- **Clic derecho dentro del overlay**: también cierra la ventana activa.
+- **MainWindow**: sirve como panel de estado si decides visualizarlo (muestra el servidor y el contador de overlays activos).
 
 ## Estructura del Proyecto
 
@@ -72,57 +83,35 @@ El ejecutable estará en: `bin\Release\net8.0-windows\win-x64\publish\Flashscore
 FlashscoreOverlay/
 ├── FlashscoreOverlay.csproj    # Configuración del proyecto
 ├── App.xaml                     # Configuración de la aplicación
-├── App.xaml.cs                  # Lógica de inicio
-├── MainWindow.xaml              # Interfaz principal
-├── MainWindow.xaml.cs           # Lógica del navegador y script
-├── OverlayWindow.xaml           # Interfaz del overlay (futuro)
-├── OverlayWindow.xaml.cs        # Lógica del overlay (futuro)
-└── README.md                    # Este archivo
+├── App.xaml.cs                  # Punto de entrada WPF
+├── MainWindow.xaml              # Interfaz de estado / servidor HTTP
+├── MainWindow.xaml.cs           # Lógica del servidor y gestión de overlays
+├── OverlayWindow.xaml           # Diseño de cada ventana overlay
+├── OverlayWindow.xaml.cs        # Lógica WebView2 + aislamiento
+├── TampermonkeyScript.js        # Script del navegador
+└── README.md                    # Esta documentación
 ```
 
-## Diferencias con el script de Tampermonkey
+## Tampermonkey & comunicación
 
-### Script Original (Tampermonkey)
-- Crea overlays dentro de la misma página web
-- Limitado al navegador
-- Depende de la extensión Tampermonkey
+El script realiza lo siguiente:
 
-### Aplicación WPF (Esta)
-- Aplicación independiente de Windows
-- Navegador integrado con WebView2
-- No necesita extensiones del navegador
-- Puede crear ventanas overlay independientes del sistema
-- Siempre en primer plano
-- Mayor control sobre la interfaz
-
-## Próximas Mejoras
-
-- [ ] Crear ventanas overlay independientes por competición
-- [ ] Guardar posición y tamaño de ventanas
-- [ ] Notificaciones de goles
-- [ ] Filtros por competición
-- [ ] Configuración de actualización automática
-- [ ] Tema claro/oscuro
+1. Añade un botón dentro de cada `.event__match`.
+2. Al hacer clic envía `matchId`, `matchMid`, la URL y parte del HTML al servidor local.
+3. El servidor responde con `{ status: "ok" }` y abre/cierra la ventana correspondiente. Si el overlay ya existía, se cierra (toggle).
 
 ## Solución de Problemas
 
 ### Error: "WebView2 Runtime not found"
-**Solución**: Instalar WebView2 Runtime desde https://developer.microsoft.com/microsoft-edge/webview2/
+Instala WebView2 Runtime desde https://developer.microsoft.com/microsoft-edge/webview2/
 
 ### Error: "El SDK de .NET no se encuentra"
-**Solución**: Instalar .NET 8.0 SDK desde https://dotnet.microsoft.com/download
+Instala .NET 8.0 SDK desde https://dotnet.microsoft.com/download
 
-### La página no carga
-**Solución**: 
-1. Verificar conexión a internet
-2. Click en el botón de refrescar (🔄)
-3. Revisar firewall/antivirus
-
-### Los botones no aparecen en los partidos
-**Solución**:
-1. Esperar 5-10 segundos después de la carga
-2. Navegar a una sección con partidos (Fútbol > En vivo)
-3. Click en refrescar si es necesario
+### El overlay no muestra el partido
+1. Asegúrate de que Flashscore esté accesible.
+2. Pulsa el botón ↺ dentro del overlay o vuelve a hacer clic en el botón 📑.
+3. Revisa que el firewall no esté bloqueando `localhost:8080`.
 
 ## Contacto y Soporte
 
