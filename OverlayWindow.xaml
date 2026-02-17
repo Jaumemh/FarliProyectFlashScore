@@ -1,0 +1,90 @@
+<Window x:Class="FlashscoreOverlay.OverlayWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="Flashscore Overlay"
+        Width="440"
+        Height="120"
+        MinWidth="280"
+        MinHeight="80"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        Background="Transparent"
+        AllowsTransparency="True"
+        Topmost="True"
+        ShowActivated="True"
+        Loaded="Window_Loaded">
+    
+    <Border CornerRadius="10"
+            Background="#FF1a1a2e"
+            BorderBrush="#FF2a2a4a"
+            BorderThickness="1"
+            SnapsToDevicePixels="True">
+        <Border.Effect>
+            <DropShadowEffect Color="#000000"
+                              BlurRadius="20"
+                              Opacity="0.5"
+                              ShadowDepth="4"/>
+        </Border.Effect>
+
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="32"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <Grid Grid.Row="0"
+                  Background="#FF0f0f23"
+                  MouseLeftButtonDown="Header_MouseLeftButtonDown">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBlock x:Name="MatchTitle"
+                           Text="Flashscore Overlay"
+                           Foreground="#FFccccdd"
+                           FontWeight="SemiBold"
+                           FontSize="12"
+                           Margin="12,0,0,0"
+                           VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis"/>
+
+                <StackPanel Grid.Column="1"
+                            Orientation="Horizontal"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Center"
+                            Margin="0,0,4,0">
+                    <Button x:Name="ReloadButton"
+                            Width="28"
+                            Height="24"
+                            Content="↺"
+                            FontSize="13"
+                            Click="ReloadButton_Click"
+                            Background="#FF1a1a35"
+                            Foreground="#FF9999aa"
+                            BorderBrush="Transparent"
+                            Cursor="Hand"
+                            Margin="0,0,4,0"/>
+                    <Button Width="28"
+                            Height="24"
+                            Content="✕"
+                            FontSize="12"
+                            Click="CloseButton_Click"
+                            Background="#FFCC142C"
+                            Foreground="White"
+                            BorderBrush="Transparent"
+                            Cursor="Hand"/>
+                </StackPanel>
+            </Grid>
+
+            <Grid Grid.Row="1">
+                <wv2:WebView2 x:Name="MatchWebView"
+                              HorizontalAlignment="Stretch"
+                              VerticalAlignment="Stretch"
+                              DefaultBackgroundColor="#1a1a2e"
+                              Source="about:blank"/>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>
