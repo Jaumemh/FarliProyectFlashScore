@@ -221,6 +221,9 @@
             } else if (json && json.action === 'removeMatch' && json.matchId) {
                 // Handle remote removal of match from overlay (e.g., right-click removal)
                 handleRemoteRemoveMatch(json.matchId);
+            } else if (json && json.action === 'removeAllMatches') {
+                // Handle remote removal of ALL matches (e.g., overlay X button)
+                handleRemoteRemoveAllMatches();
             }
         } catch (e) {
             // ignore network errors
@@ -243,6 +246,23 @@
 
         // Stop live tracking
         stopLiveTracking(matchId);
+    }
+
+    function handleRemoteRemoveAllMatches() {
+        // Get all currently tracked matches and remove each one
+        const tracked = loadTrackedMatches();
+        tracked.forEach(matchId => {
+            const matchEl = document.getElementById(matchId);
+            if (matchEl) {
+                const btn = matchEl.querySelector('.fc-overlay-btn');
+                if (btn) {
+                    btn.classList.remove('active');
+                }
+            }
+            stopLiveTracking(matchId);
+        });
+        // Clear all tracked matches at once
+        saveTrackedMatches([]);
     }
 
     function startPollingCommands() {

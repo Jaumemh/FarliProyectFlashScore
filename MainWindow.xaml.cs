@@ -285,6 +285,20 @@ namespace FlashscoreOverlay
                 _unifiedOverlay.Closed += (s, e) =>
                 {
                     _unifiedOverlay = null;
+
+                    // Send removeAllMatches command to every browser tab that owns matches
+                    var tabIds = new HashSet<string>();
+                    foreach (var kvp in _matchTabMap)
+                    {
+                        if (!string.IsNullOrWhiteSpace(kvp.Value))
+                            tabIds.Add(kvp.Value);
+                    }
+                    foreach (var tabId in tabIds)
+                    {
+                        pendingCommands[tabId] = new BrowserCommand { Action = "removeAllMatches" };
+                    }
+                    _matchTabMap.Clear();
+
                     _activeMatches.Clear();
                     UpdateMatchCount();
                 };
