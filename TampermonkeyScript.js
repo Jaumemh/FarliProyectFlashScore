@@ -510,6 +510,46 @@
         const matchId = getMatchIdentifier(matchElement);
         const matchMid = extractMatchMid(matchUrl);
 
+        // Extract flags from class (e.g. fl_81)
+        const getFlagUrl = (sel) => {
+            const el = matchElement.querySelector(sel);
+            if (!el) return '';
+            const m = el.className.match(/fl_(\d+)/);
+            return m ? `https://static.flashscore.com/res/image/data/flags/24x18/${m[1]}.png` : '';
+        };
+
+        const homeFlag = getFlagUrl('.event__logo--home.flag');
+        const awayFlag = getFlagUrl('.event__logo--away.flag');
+
+        // Tennis Logic
+        const homeService = !!matchElement.querySelector('.icon--serveHome');
+        const awayService = !!matchElement.querySelector('.icon--serveAway');
+
+        const hp = Array.from(matchElement.querySelectorAll('.event__part--home'));
+        const ap = Array.from(matchElement.querySelectorAll('.event__part--away'));
+        const count = Math.min(hp.length, ap.length);
+        const setScores = [];
+        let homeGamePoints = '';
+        let awayGamePoints = '';
+
+        for (let i = 0; i < count; i++) {
+            const h = (hp[i].textContent || '').trim();
+            const a = (ap[i].textContent || '').trim();
+            // Check if points (last col, distinctive values)
+            const isPoint = (v) => ['0','15','30','40','A','Ad'].includes(v);
+            
+            // Only consider last column as points if it looks like points. 
+            // Validating against common set scores (usually < 20 except tiebreaks).
+            // Points: 0, 15, 30, 40, Ad.
+            
+            if (i === count - 1 && (isPoint(h) || isPoint(a))) {
+                homeGamePoints = h;
+                awayGamePoints = a;
+            } else {
+                setScores.push(`${h} ${a}`);
+            }
+        }
+
         return {
             matchId,
             matchMid,
@@ -526,6 +566,12 @@
             stage: stageText,
             homeLogo: matchElement.querySelector('img[alt]')?.src || '',
             awayLogo: matchElement.querySelectorAll('img[alt]')[1]?.src || '',
+            // New fields
+            homeFlag, awayFlag,
+            homeService, awayService,
+            setScores,
+            homeGamePoints, awayGamePoints,
+            
             url: matchUrl,
             homeHref: getTeamHref(matchElement, '.event__participant--home'),
             awayHref: getTeamHref(matchElement, '.event__participant--away'),
@@ -609,7 +655,7 @@
             const competitionData = getCompetitionData(headerBody);
 
             const isActive = btn.classList.contains('active');
-
+            
             if (isActive) {
                 try {
                     await sendToApp('removeMatch', {

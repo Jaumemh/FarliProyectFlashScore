@@ -13,6 +13,9 @@
         AllowsTransparency="True"
         Topmost="True"
         ShowActivated="True"
+        WindowStartupLocation="Manual"
+        Left="18"
+        Top="106"
         Loaded="Window_Loaded">
     
     <Border CornerRadius="10"

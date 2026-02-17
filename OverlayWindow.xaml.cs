@@ -312,10 +312,26 @@ namespace FlashscoreOverlay
                     {
                         if (res != null && _matches.TryGetValue(res.OverlayId ?? res.MatchId!, out var existing))
                         {
-                            existing.Time = res.Time;
-                            existing.Stage = res.Stage;
-                            existing.HomeScore = res.HomeScore;
-                            existing.AwayScore = res.AwayScore;
+                            if (!string.IsNullOrWhiteSpace(res.Time)) existing.Time = res.Time;
+                            if (!string.IsNullOrWhiteSpace(res.Stage)) existing.Stage = res.Stage;
+                            if (!string.IsNullOrWhiteSpace(res.HomeScore)) existing.HomeScore = res.HomeScore;
+                            if (!string.IsNullOrWhiteSpace(res.AwayScore)) existing.AwayScore = res.AwayScore;
+                            
+                            // Update logos if we found them
+                            if (!string.IsNullOrWhiteSpace(res.HomeLogo)) existing.HomeLogo = res.HomeLogo;
+                            if (!string.IsNullOrWhiteSpace(res.AwayLogo)) existing.AwayLogo = res.AwayLogo;
+
+                            // Update Tennis specific fields
+                            if (!string.IsNullOrWhiteSpace(res.HomeFlag)) existing.HomeFlag = res.HomeFlag;
+                            if (!string.IsNullOrWhiteSpace(res.AwayFlag)) existing.AwayFlag = res.AwayFlag;
+                            if (res.HomeSets != null) existing.HomeSets = res.HomeSets;
+                            if (res.AwaySets != null) existing.AwaySets = res.AwaySets;
+                            if (res.HomeGamePoints != null) existing.HomeGamePoints = res.HomeGamePoints;
+                            if (res.AwayGamePoints != null) existing.AwayGamePoints = res.AwayGamePoints;
+                            existing.HomeService = res.HomeService;
+                            existing.AwayService = res.AwayService;
+                            if (res.SetScores != null) existing.SetScores = res.SetScores;
+
                             existing.Html = res.Html;
                             anyUpdated = true;
                         }
@@ -339,7 +355,165 @@ namespace FlashscoreOverlay
                 var parser = new HtmlParser();
                 var document = await parser.ParseDocumentAsync(html, token);
                 var el = FindMatchElement(match, document);
-                if (el == null) return null;
+                
+                // --- Tennis Data Extraction ---
+                // Initialize with existing data to prevent overwriting with nulls if parsing fails
+                string? homeLogo = match.HomeLogo;
+                string? awayLogo = match.AwayLogo;
+                string? homeFlag = match.HomeFlag; 
+                string? awayFlag = match.AwayFlag;
+                string? homeSets = match.HomeSets;
+                string? awaySets = match.AwaySets;
+                string? homeGamePoints = match.HomeGamePoints;
+                string? awayGamePoints = match.AwayGamePoints;
+                bool homeService = match.HomeService;
+                bool awayService = match.AwayService;
+                var setScores = match.SetScores != null ? new List<string>(match.SetScores) : new List<string>();
+                
+                // Flag to track if we found new set scores to replace old ones
+                bool foundNewSets = false;
+
+                // 1. Logos & Flags
+                // Try standard participant image selectors (Tennis uses participant__image)
+                var homeImg = document.QuerySelector(".participant__home .participant__image img") 
+                           ?? document.QuerySelector(".duelParticipant__home .participant__image img");
+                var awayImg = document.QuerySelector(".participant__away .participant__image img")
+                           ?? document.QuerySelector(".duelParticipant__away .participant__image img");
+
+                if (homeImg != null) homeLogo = homeImg.GetAttribute("src");
+                if (awayImg != null) awayLogo = awayImg.GetAttribute("src");
+
+                // Try country flags
+                // Selector 1: .duelParticipant__home .participant__image--country (img)
+                // Selector 2: .duelParticipant__home .participant__country (often div with bg image?)
+                // Selector 3: check inside participant__participantNameWrapper for a flag
+                
+                var homeFlagImg = document.QuerySelector(".duelParticipant__home .participant__image--country") 
+                               ?? document.QuerySelector(".duelParticipant__home .participant__country img");
+                var awayFlagImg = document.QuerySelector(".duelParticipant__away .participant__image--country")
+                               ?? document.QuerySelector(".duelParticipant__away .participant__country img");
+
+                if (homeFlagImg != null) homeFlag = EnsureAbsoluteUrl(homeFlagImg.GetAttribute("src"));
+                if (awayFlagImg != null) awayFlag = EnsureAbsoluteUrl(awayFlagImg.GetAttribute("src"));
+
+                // Fallback: Try to parse "fl_XXX" class from spans (User reported structure)
+                // <span class="... flag fl_200" title="...">
+                if (homeFlag == null)
+                {
+                    var homeFlagSpan = document.QuerySelector(".duelParticipant__home .flag");
+                    if (homeFlagSpan != null)
+                    {
+                         var classes = homeFlagSpan.ClassName;
+                         var matchFlag = System.Text.RegularExpressions.Regex.Match(classes, @"fl_(\d+)");
+                         if (matchFlag.Success)
+                         {
+                             // Construct URL. Typical Flashscore structure:
+                             // https://static.flashscore.com/res/image/data/flags/24x18/{id}.png
+                             homeFlag = $"https://static.flashscore.com/res/image/data/flags/24x18/{matchFlag.Groups[1].Value}.png";
+                         }
+                    }
+                }
+                
+                if (awayFlag == null)
+                {
+                    var awayFlagSpan = document.QuerySelector(".duelParticipant__away .flag");
+                    if (awayFlagSpan != null)
+                    {
+                         var classes = awayFlagSpan.ClassName;
+                         var matchFlag = System.Text.RegularExpressions.Regex.Match(classes, @"fl_(\d+)");
+                         if (matchFlag.Success)
+                         {
+                             awayFlag = $"https://static.flashscore.com/res/image/data/flags/24x18/{matchFlag.Groups[1].Value}.png";
+                         }
+                    }
+                }
+
+                // 2. Scores (Sets & Points) in Detail Page
+                var detailScore = document.QuerySelector(".detailScore__matchInfo");
+                if (detailScore != null)
+                {
+                    var rows = detailScore.QuerySelectorAll(".detailScore__row");
+                    if (rows.Length >= 2)
+                    {
+                        var homeRow = rows[0];
+                        var awayRow = rows[1];
+
+                        homeSets = homeRow.QuerySelector(".detailScore__score")?.TextContent;
+                        awaySets = awayRow.QuerySelector(".detailScore__score")?.TextContent;
+
+                        // Service indicator
+                        homeService = homeRow.QuerySelector(".detailScore__serving") != null;
+                        awayService = awayRow.QuerySelector(".detailScore__serving") != null;
+                        
+                        // Game Points
+                        var homeParts = homeRow.QuerySelectorAll(".detailScore__part");
+                        var awayParts = awayRow.QuerySelectorAll(".detailScore__part");
+
+                        int count = Math.Max(homeParts.Length, awayParts.Length);
+                        var tempSetScores = new List<string>();
+
+                        for(int i=0; i<count; i++)
+                        {
+                            var h = i < homeParts.Length ? homeParts[i].TextContent : "-";
+                            var a = i < awayParts.Length ? awayParts[i].TextContent : "-";
+                            
+                            if (!string.IsNullOrWhiteSpace(h) || !string.IsNullOrWhiteSpace(a))
+                            {
+                                h = h?.Trim() ?? "-";
+                                a = a?.Trim() ?? "-";
+                                
+                                // Check if game points: 0, 15, 30, 40, Ad
+                                bool isPoints = (h == "0" || h=="15" || h=="30" || h=="40" || h=="Ad" || a=="0" || a=="15" || a=="30" || a=="40" || a=="Ad");
+                                
+                                if (isPoints && i == count - 1) 
+                                {
+                                    homeGamePoints = h;
+                                    awayGamePoints = a;
+                                }
+                                else
+                                {
+                                     tempSetScores.Add($"{h} {a}");
+                                }
+                            }
+                        }
+                        
+                        if (tempSetScores.Count > 0)
+                        {
+                             setScores = tempSetScores;
+                        }
+                    }
+                }
+                
+                // If detailed parsing failed but it's clearly tennis (e.g. from competition name which we don't have here easily without map, 
+                // but we can check if we found sets in the main event__score--home if detail was missing)
+                
+                // If we didn't find specific sets but found a score in the main element, use that as sets for tennis if we can infer tennis
+                // But RefreshSingleMatchAsync returns MatchData, the rendering decides.
+                // We should pass "HomeScore" as "Sets" fallback in UI if tennis is detected via other means.
+
+                if (el == null) 
+                {
+                    // If match element not found in list (common in detail page parsing), return partial data with images
+                     return new MatchData
+                    {
+                        MatchId = match.MatchId,
+                        OverlayId = match.OverlayId,
+                        HomeLogo = homeLogo,
+                        AwayLogo = awayLogo,
+                        HomeFlag = homeFlag,
+                        AwayFlag = awayFlag, 
+                        Html = html,
+                        
+                        // New fields
+                        HomeSets = homeSets,
+                        AwaySets = awaySets,
+                        HomeGamePoints = homeGamePoints,
+                        AwayGamePoints = awayGamePoints,
+                        HomeService = homeService,
+                        AwayService = awayService,
+                        SetScores = setScores
+                    };
+                }
 
                 return new MatchData
                 {
@@ -349,7 +523,20 @@ namespace FlashscoreOverlay
                     Stage = el.QuerySelector(".event__stage")?.TextContent,
                     HomeScore = el.QuerySelector(".event__score--home")?.TextContent,
                     AwayScore = el.QuerySelector(".event__score--away")?.TextContent,
-                    Html = html
+                    HomeLogo = homeLogo,
+                    AwayLogo = awayLogo,
+                    Html = html,
+                    
+                     // New fields (if found in detail parsing)
+                    HomeFlag = homeFlag,
+                    AwayFlag = awayFlag,
+                    HomeSets = homeSets,
+                    AwaySets = awaySets,
+                    HomeGamePoints = homeGamePoints,
+                    AwayGamePoints = awayGamePoints,
+                    HomeService = homeService,
+                    AwayService = awayService,
+                    SetScores = setScores
                 };
             }
             catch { return null; }
@@ -414,7 +601,20 @@ namespace FlashscoreOverlay
                 HasScore = hasScore,
                 IsLive = isLive,
                 IsBlinking = shouldBlink && !isDescanso,
-                Url = md.Url
+                Url = md.Url,
+                Category = null, // Will be filled in RenderOverlay
+                CompetitionTitle = null, 
+                
+                // Tennis
+                HomeFlag = md.HomeFlag,
+                AwayFlag = md.AwayFlag,
+                HomeSets = md.HomeSets,
+                AwaySets = md.AwaySets,
+                HomeGamePoints = md.HomeGamePoints,
+                AwayGamePoints = md.AwayGamePoints,
+                HomeService = md.HomeService,
+                AwayService = md.AwayService,
+                SetScores = md.SetScores
             };
         }
 
@@ -661,6 +861,15 @@ namespace FlashscoreOverlay
             border-radius: 2px;
             cursor: pointer;
         }}
+        
+        .flag-icon {{
+            width: 18px;
+            height: 13px;
+            object-fit: cover;
+            flex-shrink: 0;
+            border-radius: 2px;
+            cursor: pointer;
+        }}
 
         .team-name {{
             font-size: 12px;
@@ -673,6 +882,17 @@ namespace FlashscoreOverlay
             cursor: pointer;
             transition: color 0.15s ease;
         }}
+        
+        /* Tennis Service Indicator */
+        .service-icon {{
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            background-color: #e8e8e8; /* or yellow like tennis ball? screenshot shows white/grey icon */
+            border-radius: 50%;
+            margin-left: 6px;
+            opacity: 0.8;
+        }}
 
         /* Score column */
         .score-col {{
@@ -684,6 +904,36 @@ namespace FlashscoreOverlay
             padding-left: 10px;
             flex-shrink: 0;
         }}
+        
+        /* Tennis Score Grid */
+        .tennis-score-col {{
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            gap: 12px;
+            margin-left: auto;
+            padding-left: 10px;
+            flex-shrink: 0;
+            font-variant-numeric: tabular-nums;
+        }}
+        
+        .tennis-sets {{
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            align-items: flex-end;
+        }}
+        
+        .tennis-points {{
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            align-items: center;
+            min-width: 24px;
+            padding: 2px 4px;
+            background: rgba(255,255,255,0.05); /* Slight bg for points column */
+            border-radius: 4px;
+        }}
 
         .score-val {{
             font-weight: 700;
@@ -691,6 +941,24 @@ namespace FlashscoreOverlay
             color: var(--score-live);
             min-width: 16px;
             text-align: center;
+        }}
+        
+        .set-val {{
+            font-size: 12px;
+            color: #ccc;
+            min-width: 14px;
+            text-align: center;
+        }}
+        
+        .set-val.current {{
+            color: var(--color-primary);
+            font-weight: 700;
+        }}
+        
+        .point-val {{
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--color-primary);
         }}
 
         .score-val.finished {{ color: var(--score-finished); }}
@@ -705,45 +973,6 @@ namespace FlashscoreOverlay
             font-weight: 600;
             margin-top: 2px;
             text-align: center;
-        }}
-
-        /* Context menu */
-        .ctx-menu {{
-            display: none;
-            position: fixed;
-            z-index: 1000;
-            background: #252550;
-            border: 1px solid #3a3a6a;
-            border-radius: 6px;
-            box-shadow: 0 4px 16px rgba(0,0,0,0.5);
-            padding: 4px 0;
-            min-width: 160px;
-        }}
-
-        .ctx-menu.visible {{ display: block; }}
-
-        .ctx-menu-item {{
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 8px 14px;
-            font-size: 12px;
-            color: #e0e0e0;
-            cursor: pointer;
-            transition: background 0.1s;
-        }}
-
-        .ctx-menu-item:hover {{
-            background: rgba(255,255,255,0.08);
-        }}
-
-        .ctx-menu-item.danger {{ color: #ff4c6a; }}
-        .ctx-menu-item.danger:hover {{ background: rgba(255,76,106,0.12); }}
-
-        .ctx-menu-sep {{
-            height: 1px;
-            background: #3a3a6a;
-            margin: 4px 0;
         }}
 
         /* Empty state */
@@ -852,24 +1081,15 @@ namespace FlashscoreOverlay
                 </div>
             </header>`;
         }}
+        
+        function safeStr(s) {{ return s || ''; }}
 
         function renderMatch(match) {{
-            const homeName = match.homeTeam || 'Local';
-            const awayName = match.awayTeam || 'Visitante';
-            const homeLogoSrc = match.homeLogo || placeholder;
-            const awayLogoSrc = match.awayLogo || placeholder;
             const matchId = match.matchId || match.overlayId || '';
             const matchUrl = match.url || '#';
-            const homeHref = match.homeHref || '';
-            const awayHref = match.awayHref || '';
             const isLive = !!match.isLive;
-            const hasScore = !!match.hasScore;
-            const scoreClass = isLive ? 'score-val' : (hasScore ? 'score-val finished' : 'score-val preview');
-
-            const homeScoreText = match.homeScore || (hasScore ? '0' : '-');
-            const awayScoreText = match.awayScore || (hasScore ? '0' : '-');
-
-            // Build the time/stage column
+            
+            // --- Common Time Column ---
             let timeColHtml;
             if (isLive) {{
                 let displayTime = match.timeLabel || '';
@@ -886,6 +1106,127 @@ namespace FlashscoreOverlay
                 }}
                 timeColHtml = `<div class='event__time'>${{inner}}</div>`;
             }}
+
+            // --- Detect Tennis Mode ---
+            // Heuristic updates: check category or title
+            const cat = (match.category || '').toUpperCase();
+            const title = (match.competitionTitle || '').toUpperCase();
+            const url = (match.url || '').toLowerCase();
+            
+            let isTennis = (!!match.homeFlag || !!match.awayFlag || !!match.homeSets || (match.setScores && match.setScores.length > 0));
+            if (!isTennis && (url.includes('/tenis/') || url.includes('/tennis/'))) isTennis = true;
+            
+            // Console debug
+            console.log('Match Debug:', match.matchId, 'Flags:', match.homeFlag, match.awayFlag, 'Sets:', match.setScores, 'IsTennis:', isTennis, 'Cat:', cat);
+            
+            if (!isTennis) {{
+                // Fallback detection by name
+                if (cat.includes('ATP') || cat.includes('WTA') || cat.includes('CHALLENGER') || cat.includes('ITF') || 
+                    cat.includes('TENIS') || title.includes('TENIS')) {{
+                    isTennis = true;
+                }}
+            }}
+            
+            const homeName = match.homeTeam || 'Local';
+            const awayName = match.awayTeam || 'Visitante';
+            const homeHref = match.homeHref || '';
+            const awayHref = match.awayHref || '';
+            
+            if (isTennis) {{
+                const homeFlagSrc = match.homeFlag || placeholder;
+                const awayFlagSrc = match.awayFlag || placeholder;
+                
+                // Detailed scores fallback
+                let homeSetsVal = match.homeSets;
+                let awaySetsVal = match.awaySets;
+                
+                // If we didn't scrape sets specifically but have main score, use it as sets
+                if (!homeSetsVal && !awaySetsVal && (match.homeScore || match.awayScore)) {{
+                     homeSetsVal = match.homeScore || '0';
+                     awaySetsVal = match.awayScore || '0';
+                }}
+                
+                homeSetsVal = homeSetsVal || '0';
+                awaySetsVal = awaySetsVal || '0';
+                
+                // Sets history
+                const setScores = match.setScores || [];
+                let parsedSets = setScores.map(s => {{
+                   const parts = s.split(' ');
+                   return {{ h: parts[0]||'-', a: parts[1]||'-' }};
+                }});
+                
+                // Points
+                const homePts = match.homeGamePoints || '0';
+                const awayPts = match.awayGamePoints || '0';
+                
+                // Build sets HTML (all sets for Home in one line? No, usually columns per set)
+                // We'll iterate sets and build <span>s
+                
+                let homeSetsHtml = '';
+                let awaySetsHtml = '';
+                
+                parsedSets.forEach(s => {{
+                    homeSetsHtml += `<span class='set-val'>${{s.h}}</span>&nbsp;`;
+                    awaySetsHtml += `<span class='set-val'>${{s.a}}</span>&nbsp;`;
+                }});
+                
+                // Add current sets count highlighted or at start?
+                // Usually Flashscore shows: [Sets] [Set1] [Set2] ... [Points]
+                // Let's put Sets Count in specific color
+                
+                const homeServiceHtml = match.homeService ? `<span class='service-icon'></span>` : '';
+                const awayServiceHtml = match.awayService ? `<span class='service-icon'></span>` : '';
+                
+                return `
+            <div class='match-row tennis' data-id='${{matchId}}' data-url='${{matchUrl}}'>
+                <a href='${{matchUrl}}' class='row-link' aria-label='Ver partido'></a>
+                ${{timeColHtml}}
+                
+                <div class='teams-container'>
+                    <div class='team-item' data-team-name='${{homeName}}' data-team-href='${{homeHref}}' data-match-url='${{matchUrl}}'>
+                        <img class='flag-icon' src='${{homeFlagSrc}}' onerror=""this.onerror=null;this.src='${{placeholder}}'"" alt=''>
+                        <span class='team-name'>${{homeName}}</span>
+                        ${{homeServiceHtml}}
+                    </div>
+                    <div class='team-item' data-team-name='${{awayName}}' data-team-href='${{awayHref}}' data-match-url='${{matchUrl}}'>
+                        <img class='flag-icon' src='${{awayFlagSrc}}' onerror=""this.onerror=null;this.src='${{placeholder}}'"" alt=''>
+                        <span class='team-name'>${{awayName}}</span>
+                        ${{awayServiceHtml}}
+                    </div>
+                </div>
+                
+                <div class='tennis-score-col'>
+                     <!-- Sets History -->
+                     <div class='tennis-sets'>
+                        <div style='display:flex;gap:6px'>
+                           <span class='set-val current'>${{homeSetsVal}}</span>
+                           ${{homeSetsHtml}}
+                        </div>
+                        <div style='display:flex;gap:6px'>
+                           <span class='set-val current'>${{awaySetsVal}}</span>
+                           ${{awaySetsHtml}}
+                        </div>
+                     </div>
+                     
+                     <!-- Points -->
+                     <div class='tennis-points'>
+                        <span class='point-val'>${{homePts}}</span>
+                        <span class='point-val'>${{awayPts}}</span>
+                     </div>
+                </div>
+            </div>`;
+            }}
+            
+            // --- Fallback Standard Mode ---
+            
+            const homeLogoSrc = match.homeLogo || placeholder;
+            const awayLogoSrc = match.awayLogo || placeholder;
+            const hasScore = !!match.hasScore;
+            const scoreClass = isLive ? 'score-val' : (hasScore ? 'score-val finished' : 'score-val preview');
+
+            const homeScoreText = match.homeScore || (hasScore ? '0' : '-');
+            const awayScoreText = match.awayScore || (hasScore ? '0' : '-');
 
             return `
             <div class='match-row' data-id='${{matchId}}' data-url='${{matchUrl}}'>
@@ -994,6 +1335,26 @@ namespace FlashscoreOverlay
             public bool IsLive { get; set; }
             public bool IsBlinking { get; set; }
             public string? Url { get; set; }
+            public string? Category { get; set; } 
+            public string? CompetitionTitle { get; set; }
+            
+            // Tennis specific
+            public string? HomeFlag { get; set; }
+            public string? AwayFlag { get; set; }
+            public string? HomeSets { get; set; }
+            public string? AwaySets { get; set; }
+            public string? HomeGamePoints { get; set; }
+            public string? AwayGamePoints { get; set; }
+            public bool HomeService { get; set; }
+            public bool AwayService { get; set; }
+            public List<string>? SetScores { get; set; }
+        }
+        private string? EnsureAbsoluteUrl(string? url)
+        {
+            if (string.IsNullOrWhiteSpace(url)) return null;
+            if (url.StartsWith("//")) return "https:" + url;
+            if (url.StartsWith("/")) return "https://www.flashscore.es" + url;
+            return url;
         }
     }
 }
