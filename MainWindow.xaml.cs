@@ -5,7 +5,9 @@ using System.Net;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
+using Microsoft.Web.WebView2.Wpf;
 using Newtonsoft.Json;
 
 namespace FlashscoreOverlay
@@ -261,6 +263,123 @@ namespace FlashscoreOverlay
             EnsureOverlayOpen();
             UpdateOverlayContent();
             UpdateMatchCount();
+
+            // Auto-fetch quarter scores in the background via hidden WebView2
+            if (!string.IsNullOrWhiteSpace(data.Match.Url) && data.Match.Url.Contains("/partido/"))
+            {
+                _ = FetchQuartersInBackgroundAsync(id, data.Match.Url!);
+            }
+        }
+
+        /// <summary>
+        /// Fetches quarter scores using a hidden offscreen WebView2 window.
+        /// Creates a tiny 1x1 Window positioned offscreen, with a WebView2 that
+        /// loads the match detail page, waits for JS to render quarter data,
+        /// extracts it, and cleans up. Completely invisible to the user.
+        /// </summary>
+        private async Task FetchQuartersInBackgroundAsync(string matchId, string matchUrl)
+        {
+            Window? fetchWindow = null;
+            try
+            {
+                // Create a dedicated offscreen window for the WebView2
+                var webView = new WebView2 { HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch };
+                fetchWindow = new Window
+                {
+                    Width = 1,
+                    Height = 1,
+                    Left = -9999,
+                    Top = -9999,
+                    WindowStyle = WindowStyle.None,
+                    ShowInTaskbar = false,
+                    ShowActivated = false,
+                    Opacity = 0,
+                    Content = webView
+                };
+                fetchWindow.Show();
+
+                await webView.EnsureCoreWebView2Async();
+                webView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
+                webView.CoreWebView2.Settings.AreDevToolsEnabled = false;
+                webView.CoreWebView2.Settings.IsStatusBarEnabled = false;
+
+                var tcs = new TaskCompletionSource<bool>();
+                var timeoutCts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(20));
+                timeoutCts.Token.Register(() => tcs.TrySetResult(false));
+
+                webView.CoreWebView2.NavigationCompleted += async (s, e) =>
+                {
+                    if (!e.IsSuccess) { tcs.TrySetResult(false); return; }
+
+                    // Poll for quarter data to appear (JS rendering takes time)
+                    for (int attempt = 0; attempt < 30; attempt++)
+                    {
+                        await Task.Delay(500);
+                        if (timeoutCts.IsCancellationRequested) break;
+
+                        try
+                        {
+                            var jsResult = await webView.CoreWebView2.ExecuteScriptAsync(@"
+                                (function() {
+                                    var smh = document.querySelector('.smh__template');
+                                    if (!smh) return JSON.stringify(null);
+                                    var home = [], away = [];
+                                    for (var i = 1; i <= 8; i++) {
+                                        var h = smh.querySelector('.smh__part.smh__home.smh__part--' + i);
+                                        var a = smh.querySelector('.smh__part.smh__away.smh__part--' + i);
+                                        var hText = h ? h.textContent.trim() : '';
+                                        var aText = a ? a.textContent.trim() : '';
+                                        if (hText || aText) {
+                                            home.push(hText);
+                                            away.push(aText);
+                                        } else break;
+                                    }
+                                    if (home.length === 0) return JSON.stringify(null);
+                                    return JSON.stringify({ home: home, away: away });
+                                })()
+                            ");
+
+                            if (!string.IsNullOrWhiteSpace(jsResult) && jsResult != "null" && jsResult != "\"null\"")
+                            {
+                                var unescaped = JsonConvert.DeserializeObject<string>(jsResult);
+                                if (!string.IsNullOrWhiteSpace(unescaped))
+                                {
+                                    var quarterData = JsonConvert.DeserializeObject<QuarterResult>(unescaped);
+                                    if (quarterData?.Home != null && quarterData.Home.Count > 0)
+                                    {
+                                        await Dispatcher.InvokeAsync(() =>
+                                        {
+                                            if (_activeMatches.TryGetValue(matchId, out var existing))
+                                            {
+                                                existing.HomeQuarters = quarterData.Home;
+                                                existing.AwayQuarters = quarterData.Away;
+                                                UpdateOverlayContent();
+                                                System.Diagnostics.Debug.WriteLine($"[QuarterFetch] OK: {quarterData.Home.Count} quarters for {matchId}");
+                                            }
+                                        });
+                                        tcs.TrySetResult(true);
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                        catch { /* continue polling */ }
+                    }
+
+                    tcs.TrySetResult(false);
+                };
+
+                webView.CoreWebView2.Navigate(matchUrl);
+                await tcs.Task;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[QuarterFetch] Error: {ex.Message}");
+            }
+            finally
+            {
+                try { fetchWindow?.Close(); } catch { }
+            }
         }
 
         private void RemoveMatchFromOverlay(MessageData? data)
@@ -466,5 +585,14 @@ namespace FlashscoreOverlay
 
         [JsonProperty("href")]
         public string? Href { get; set; }
+    }
+
+    public class QuarterResult
+    {
+        [JsonProperty("home")]
+        public List<string>? Home { get; set; }
+
+        [JsonProperty("away")]
+        public List<string>? Away { get; set; }
     }
 }

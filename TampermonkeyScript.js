@@ -753,13 +753,8 @@
                     try { if (matchData.homeTeam && matchData.homeHref) indexTeam(matchData.homeTeam, matchData.homeHref); } catch (e) { }
                     try { if (matchData.awayTeam && matchData.awayHref) indexTeam(matchData.awayTeam, matchData.awayHref); } catch (e) { }
 
-                    // Auto-fetch quarter scores by opening match page in background tab
-                    if (matchData.url) {
-                        const fetchUrl = matchData.url + (matchData.url.includes('#') ? '&' : '#') + 'fc_quarter_fetch';
-                        try {
-                            window.open(fetchUrl, '_blank');
-                        } catch (e) { }
-                    }
+                    // Quarter scores are now fetched by the WPF app (hidden WebView2)
+                    // No browser tab or popup needed
                 } catch (error) {
                     console.error('No se pudo abrir el overlay:', error);
                     alert('No se pudo abrir el overlay. Inicia la aplicación Windows y vuelve a intentarlo.');
