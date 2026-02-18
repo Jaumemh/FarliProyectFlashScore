@@ -574,6 +574,52 @@
         };
     }
 
+    const SPORT_SLUG_MAP = {
+        'futbol': 'Fútbol', 'soccer': 'Fútbol', 'football': 'Fútbol',
+        'baloncesto': 'Baloncesto', 'basketball': 'Baloncesto',
+        'tenis': 'Tenis', 'tennis': 'Tenis',
+        'hockey': 'Hockey', 'hockey-hielo': 'Hockey',
+        'balonmano': 'Balonmano', 'handball': 'Balonmano',
+        'beisbol': 'Béisbol', 'baseball': 'Béisbol',
+        'rugby': 'Rugby',
+        'voleibol': 'Voleibol', 'volleyball': 'Voleibol',
+        'futbol-americano': 'Fútbol Americano', 'american-football': 'Fútbol Americano',
+        'cricket': 'Cricket',
+        'esports': 'eSports',
+        'dardos': 'Dardos', 'darts': 'Dardos',
+        'futsal': 'Futsal',
+        'golf': 'Golf',
+        'mma': 'MMA',
+        'motorsport': 'Motorsport',
+        'ciclismo': 'Ciclismo', 'cycling': 'Ciclismo',
+        'waterpolo': 'Waterpolo', 'water-polo': 'Waterpolo',
+        'badminton': 'Bádminton',
+        'snooker': 'Snooker',
+        'tenis-de-mesa': 'Tenis de Mesa', 'table-tennis': 'Tenis de Mesa',
+        'boxeo': 'Boxeo', 'boxing': 'Boxeo',
+        'padel': 'Pádel',
+        'floorball': 'Floorball',
+        'bandy': 'Bandy',
+        'rugby-league': 'Rugby League',
+        'afl': 'AFL',
+        'netball': 'Netball',
+        'pesapallo': 'Pesäpallo',
+        'kabaddi': 'Kabaddi'
+    };
+
+    function extractSportFromHref(href) {
+        try {
+            if (!href) return '';
+            const u = new URL(href, 'https://www.flashscore.es');
+            const segments = u.pathname.split('/').filter(Boolean);
+            if (segments.length > 0) {
+                const slug = segments[0].toLowerCase();
+                return SPORT_SLUG_MAP[slug] || slug.charAt(0).toUpperCase() + slug.slice(1);
+            }
+        } catch (e) { }
+        return '';
+    }
+
     function getCompetitionData(headerBody) {
         const titleText = headerBody.querySelector('.headerLeague__title-text')?.textContent.trim() || '';
         const categoryText = headerBody.querySelector('.headerLeague__category-text')?.textContent.trim() || '';
@@ -592,10 +638,13 @@
             // ignore
         }
 
+        const sport = extractSportFromHref(href);
+
         return {
             competitionId: `${categoryText}:${titleText}`,
             title: titleText,
             category: categoryText,
+            sport: sport,
             logo: headerBody.querySelector('.headerLeague__logo img')?.src || '',
             href: href,
             hrefWithParam: hrefWithParam

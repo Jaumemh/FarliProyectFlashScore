@@ -28,6 +28,7 @@ namespace FlashscoreOverlay
         private const double HeaderHeight = 46;
         private const double MatchRowHeight = 50;
         private const double GroupMargin = 8;
+        private const double SportHeaderHeight = 32;
         private const double EmptyStateHeight = 80;
 
         // Key: MatchId (or OverlayId)
@@ -210,7 +211,7 @@ namespace FlashscoreOverlay
 
         private void CloseButton_Click(object sender, RoutedEventArgs e) => Close();
 
-        private void AdjustWindowHeight(int groupCount, int totalMatchCount)
+        private void AdjustWindowHeight(int sportCount, int groupCount, int totalMatchCount)
         {
             double contentHeight;
             if (groupCount == 0)
@@ -220,6 +221,7 @@ namespace FlashscoreOverlay
             else
             {
                 contentHeight = PaddingTotal
+                    + (sportCount * SportHeaderHeight)
                     + (groupCount * (HeaderHeight + GroupMargin))
                     + (totalMatchCount * MatchRowHeight);
             }
@@ -230,6 +232,27 @@ namespace FlashscoreOverlay
             var maxAllowed = screenHeight * 0.85;
 
             Height = idealHeight > maxAllowed ? maxAllowed : idealHeight;
+        }
+
+        private string GetSportForCompetition(CompetitionData? comp)
+        {
+            if (!string.IsNullOrWhiteSpace(comp?.Sport)) return comp!.Sport!;
+            // Fallback: try to extract from href
+            if (!string.IsNullOrWhiteSpace(comp?.Href))
+            {
+                try
+                {
+                    var uri = new Uri(comp!.Href!);
+                    var segments = uri.AbsolutePath.Trim('/').Split('/');
+                    if (segments.Length > 0 && !string.IsNullOrWhiteSpace(segments[0]))
+                    {
+                        var slug = segments[0].ToLowerInvariant();
+                        return System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(slug.Replace('-', ' '));
+                    }
+                }
+                catch { }
+            }
+            return "Otros";
         }
 
         private void RenderOverlay()
@@ -266,14 +289,25 @@ namespace FlashscoreOverlay
                 .OrderBy(g => g.Competition?.Title)
                 .ToList();
 
+            // Group by sport
+            var sportGroups = groups
+                .GroupBy(g => GetSportForCompetition(g.Competition))
+                .Select(sg => new SportGroup
+                {
+                    Sport = sg.Key,
+                    Groups = sg.ToList()
+                })
+                .OrderBy(sg => sg.Sport)
+                .ToList();
+
             var totalMatches = groups.Sum(g => g.Matches.Count);
-            AdjustWindowHeight(groups.Count, totalMatches);
+            AdjustWindowHeight(sportGroups.Count, groups.Count, totalMatches);
 
             var settings = new JsonSerializerSettings
             {
                 ContractResolver = new CamelCasePropertyNamesContractResolver()
             };
-            var payload = JsonConvert.SerializeObject(groups, settings);
+            var payload = JsonConvert.SerializeObject(sportGroups, settings);
             var payloadBase64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(payload));
 
             // Enable scroll when more than 1 match total
@@ -755,6 +789,34 @@ namespace FlashscoreOverlay
             background: var(--header-bg);
             border-radius: 8px;
         }}
+
+        /* === Sport Header === */
+        .sport-header {{
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 7px 14px;
+            background: #0d1117;
+            border-bottom: 2px solid var(--color-primary);
+            margin-top: 6px;
+        }}
+
+        .sport-header:first-child {{
+            margin-top: 0;
+        }}
+
+        .sport-header__icon {{
+            font-size: 14px;
+            flex-shrink: 0;
+        }}
+
+        .sport-header__name {{
+            font-size: 11px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #ffffff;
+        }}
     </style>
 </head>
 <body>
@@ -910,33 +972,64 @@ namespace FlashscoreOverlay
             </div>`;
         }}
 
-        function render(groups) {{
-            if (!groups || groups.length === 0) {{
+        const SPORT_ICONS = {{
+            'Fútbol': '⚽', 'Baloncesto': '🏀', 'Tenis': '🎾',
+            'Hockey': '🏒', 'Balonmano': '🤾', 'Béisbol': '⚾',
+            'Rugby': '🏉', 'Voleibol': '🏐', 'Fútbol Americano': '🏈',
+            'Cricket': '🏏', 'eSports': '🎮', 'Dardos': '🎯',
+            'Futsal': '⚽', 'Golf': '⛳', 'MMA': '🥊',
+            'Motorsport': '🏎️', 'Ciclismo': '🚴', 'Waterpolo': '🤽',
+            'Bádminton': '🏸', 'Snooker': '🎱', 'Tenis de Mesa': '🏓',
+            'Boxeo': '🥊', 'Pádel': '🎾', 'Rugby League': '🏉',
+            'AFL': '🏈', 'Otros': '🏅'
+        }};
+
+        function renderSportHeader(sportName) {{
+            const icon = SPORT_ICONS[sportName] || '🏅';
+            return `<div class='sport-header'>
+                <span class='sport-header__icon'>${{icon}}</span>
+                <span class='sport-header__name'>${{sportName}}</span>
+            </div>`;
+        }}
+
+        function render(sportGroups) {{
+            if (!sportGroups || sportGroups.length === 0) {{
                 container.innerHTML = `<div class='empty-state'>No hay partidos fijados.<br>Agrega partidos desde Flashscore.</div>`;
                 return;
             }}
 
             container.innerHTML = '';
 
-            groups.forEach(group => {{
-                const comp = group.competition;
-                if (!comp) return;
+            sportGroups.forEach(sportGroup => {{
+                const sportName = sportGroup.sport || 'Otros';
+                const groups = sportGroup.groups || [];
 
-                const compDiv = document.createElement('div');
-                compDiv.className = 'competition-container';
-                compDiv.innerHTML = renderHeader(comp);
+                // Sport header
+                const sportDiv = document.createElement('div');
+                sportDiv.innerHTML = renderSportHeader(sportName);
+                if (sportDiv.firstChild) container.appendChild(sportDiv.firstChild);
 
-                const wrapper = document.createElement('div');
-                wrapper.className = 'match-row-wrapper';
+                // Competition groups under this sport
+                groups.forEach(group => {{
+                    const comp = group.competition;
+                    if (!comp) return;
 
-                (group.matches || []).forEach(m => {{
-                    const d = document.createElement('div');
-                    d.innerHTML = renderMatch(m).trim();
-                    if (d.firstChild) wrapper.appendChild(d.firstChild);
+                    const compDiv = document.createElement('div');
+                    compDiv.className = 'competition-container';
+                    compDiv.innerHTML = renderHeader(comp);
+
+                    const wrapper = document.createElement('div');
+                    wrapper.className = 'match-row-wrapper';
+
+                    (group.matches || []).forEach(m => {{
+                        const d = document.createElement('div');
+                        d.innerHTML = renderMatch(m).trim();
+                        if (d.firstChild) wrapper.appendChild(d.firstChild);
+                    }});
+
+                    compDiv.appendChild(wrapper);
+                    container.appendChild(compDiv);
                 }});
-
-                compDiv.appendChild(wrapper);
-                container.appendChild(compDiv);
             }});
         }}
 
@@ -964,6 +1057,12 @@ namespace FlashscoreOverlay
             public string? TabId { get; set; }
             public string? Name { get; set; }
             public string? MatchUrl { get; set; }
+        }
+
+        public class SportGroup
+        {
+            public string Sport { get; set; } = "Otros";
+            public List<MatchGroup> Groups { get; set; } = new();
         }
 
         public class MatchGroup

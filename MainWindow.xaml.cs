@@ -433,6 +433,9 @@ namespace FlashscoreOverlay
 
     public class CompetitionData
     {
+        [JsonProperty("sport")]
+        public string? Sport { get; set; }
+
         [JsonProperty("competitionId")]
         public string? CompetitionId { get; set; }
 
