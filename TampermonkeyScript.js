@@ -81,32 +81,34 @@
         if (!href) return href;
 
         // 1. Extract path part starting from /equipo/ or /team/
-        // This effectively strips any malformed domain prefixes like www.flashscore.es/www.flashscore.es
         const match = href.toString().match(/(\/(?:equipo|team)\/.*)/i);
-        if (!match) return href; // Return original if pattern not found
+        if (!match) return href;
 
         let path = match[1];
 
-        // 2. Fix multi-segment slugs: /equipo/part1/part2/ID -> /equipo/part1-part2/ID
-        // Heuristic: If we have 4+ segments (equipo/a/b/ID...), assume a/b should be a-b
+        // 2. Clean slashes
+        path = path.replace(/\/+/g, '/');
+        if (!path.startsWith('/')) path = '/' + path;
+
+        // 3. Strip known section suffixes FIRST (before slug fix)
+        path = path.replace(/\/(resumen|resultados|partidos|calendario|plantilla|noticias)\/?$/i, '');
+
+        // 4. Fix multi-segment slugs: /equipo/part1/part2/ID -> /equipo/part1-part2/ID
         const segments = path.split('/').filter(p => p && !/flashscore/i.test(p));
         // segments[0] is 'equipo' or 'team'
 
         if (segments.length >= 4) {
-            // Check if 4th segment looks like an ID (min 4 chars)
             const idCandidate = segments[3];
             if (idCandidate && idCandidate.length >= 4) {
                 const newSlug = `${segments[1]}-${segments[2]}`;
-                // Reconstruct path: /equipo/new-slug/id/suffix
-                // Use the rest of segments from index 3 onwards
                 const rest = segments.slice(3).join('/');
                 path = `/${segments[0]}/${newSlug}/${rest}`;
             }
         }
 
-        // 3. Clean slashes and prepend single domain
-        path = path.replace(/\/+/g, '/');
-        if (!path.startsWith('/')) path = '/' + path;
+        // 5. Append /partidos/
+        if (!path.endsWith('/')) path += '/';
+        path += 'partidos/';
 
         return `https://www.flashscore.es${path}`;
     }

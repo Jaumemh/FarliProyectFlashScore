@@ -794,11 +794,11 @@ namespace FlashscoreOverlay
         .sport-header {{
             display: flex;
             align-items: center;
-            gap: 8px;
-            padding: 7px 14px;
-            background: #0d1117;
-            border-bottom: 2px solid var(--color-primary);
-            margin-top: 6px;
+            gap: 6px;
+            padding: 5px 14px;
+            background: #0e0e1a;
+            border-bottom: 1px solid #2a2a3a;
+            margin-top: 4px;
         }}
 
         .sport-header:first-child {{
@@ -806,16 +806,18 @@ namespace FlashscoreOverlay
         }}
 
         .sport-header__icon {{
-            font-size: 14px;
+            font-size: 11px;
             flex-shrink: 0;
+            filter: grayscale(1) brightness(1.4);
+            opacity: 1;
         }}
 
         .sport-header__name {{
-            font-size: 11px;
-            font-weight: 800;
+            font-size: 10px;
+            font-weight: 400;
             text-transform: uppercase;
-            letter-spacing: 0.08em;
-            color: #ffffff;
+            letter-spacing: 0.06em;
+            color: #6b6b82;
         }}
     </style>
 </head>
@@ -974,14 +976,15 @@ namespace FlashscoreOverlay
 
         const SPORT_ICONS = {{
             'Fútbol': '⚽', 'Baloncesto': '🏀', 'Tenis': '🎾',
-            'Hockey': '🏒', 'Balonmano': '🤾', 'Béisbol': '⚾',
-            'Rugby': '🏉', 'Voleibol': '🏐', 'Fútbol Americano': '🏈',
-            'Cricket': '🏏', 'eSports': '🎮', 'Dardos': '🎯',
-            'Futsal': '⚽', 'Golf': '⛳', 'MMA': '🥊',
+            'Hockey': '🏒', 'Hockey Hielo': '🏒', 'Balonmano': '🤾',
+            'Béisbol': '⚾', 'Rugby': '🏉', 'Voleibol': '🏐',
+            'Fútbol Americano': '🏈', 'Cricket': '🏏', 'eSports': '🎮',
+            'Dardos': '🎯', 'Futsal': '⚽', 'Golf': '⛳', 'MMA': '🥊',
             'Motorsport': '🏎️', 'Ciclismo': '🚴', 'Waterpolo': '🤽',
             'Bádminton': '🏸', 'Snooker': '🎱', 'Tenis de Mesa': '🏓',
             'Boxeo': '🥊', 'Pádel': '🎾', 'Rugby League': '🏉',
-            'AFL': '🏈', 'Otros': '🏅'
+            'AFL': '🏈', 'Floorball': '🏒', 'Bandy': '🏒',
+            'Otros': '🏅'
         }};
 
         function renderSportHeader(sportName) {{
@@ -1040,6 +1043,7 @@ namespace FlashscoreOverlay
 </body>
 </html>";
         }
+
 
         protected override void OnClosed(EventArgs e)
         {
