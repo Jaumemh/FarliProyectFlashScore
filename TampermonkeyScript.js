@@ -221,6 +221,10 @@
             } else if (json && json.action === 'removeMatch' && json.matchId) {
                 // Handle remote removal of match from overlay (e.g., right-click removal)
                 handleRemoteRemoveMatch(json.matchId);
+            } else if (json && json.action === 'removeMatches' && Array.isArray(json.matchIds)) {
+                json.matchIds.forEach(id => {
+                    if (id) handleRemoteRemoveMatch(id);
+                });
             } else if (json && json.action === 'removeAllMatches') {
                 // Handle remote removal of ALL matches (e.g., overlay X button)
                 handleRemoteRemoveAllMatches();

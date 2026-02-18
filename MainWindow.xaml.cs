@@ -256,16 +256,18 @@ namespace FlashscoreOverlay
         {
             if (_activeMatches.ContainsKey(matchId))
             {
+                var isClosingOverlay = _activeMatches.Count == 1;
                 _activeMatches.Remove(matchId);
-                
-                // Send removeMatch command to the browser tab that owns this match
+
                 if (_matchTabMap.TryGetValue(matchId, out var tabId))
                 {
-                    var command = new BrowserCommand { Action = "removeMatch", MatchId = matchId };
-                    pendingCommands[tabId] = command;
-                    _matchTabMap.Remove(matchId);
+                    QueueRemoveMatchCommand(tabId, matchId);
+                    if (!isClosingOverlay)
+                    {
+                        _matchTabMap.Remove(matchId);
+                    }
                 }
-                
+
                 UpdateOverlayContent();
                 UpdateMatchCount();
 
@@ -318,6 +320,44 @@ namespace FlashscoreOverlay
         {
             if (string.IsNullOrWhiteSpace(tabId) || cmd == null) return;
             pendingCommands[tabId] = cmd;
+        }
+
+        private void QueueRemoveMatchCommand(string tabId, string matchId)
+        {
+            if (string.IsNullOrWhiteSpace(tabId) || string.IsNullOrWhiteSpace(matchId)) return;
+ 
+            if (pendingCommands.TryGetValue(tabId, out var existing))
+            {
+                if (existing.Action == "removeAllMatches") return;
+                if (existing.Action == "removeAllMatches") return;
+                if (existing.Action == "removeMatches")
+                {
+                    if (existing.MatchIds == null) existing.MatchIds = new List<string>();
+                    if (!existing.MatchIds.Contains(matchId))
+                        existing.MatchIds.Add(matchId);
+                    return;
+                }
+                if (existing.Action == "removeMatch")
+                {
+                    var ids = new List<string>();
+                    if (!string.IsNullOrWhiteSpace(existing.MatchId))
+                        ids.Add(existing.MatchId);
+                    if (!ids.Contains(matchId))
+                        ids.Add(matchId);
+                    pendingCommands[tabId] = new BrowserCommand
+                    {
+                        Action = "removeMatches",
+                        MatchIds = ids
+                    };
+                    return;
+                }
+            }
+
+            pendingCommands[tabId] = new BrowserCommand
+            {
+                Action = "removeMatch",
+                MatchId = matchId
+            };
         }
 
         private void UpdateMatchCount()
@@ -465,5 +505,8 @@ namespace FlashscoreOverlay
 
         [JsonProperty("matchId")]
         public string? MatchId { get; set; }
+
+        [JsonProperty("matchIds")]
+        public List<string>? MatchIds { get; set; }
     }
 }
