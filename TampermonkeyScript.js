@@ -338,7 +338,7 @@
         const homeScoreTxt = (matchEl.querySelector('.event__score--home')?.textContent || '').trim();
         const awayScoreTxt = (matchEl.querySelector('.event__score--away')?.textContent || '').trim();
 
-        // Tarjetas: en lista suele haber rojas (icon--redCard). Amarillas a veces no aparecen; lo intentamos por si acaso.
+        // Tarjetas
         const homeRed = countIcons(matchEl, [
             '.event__participant--home .icon--redCard',
             '.event__participant--home [class*="redCard"]'
@@ -359,6 +359,12 @@
             '.event__participant--away [class*="y-card"]'
         ]);
 
+        // Tennis-specific: capture set parts and game points text for change detection
+        const homeParts = Array.from(matchEl.querySelectorAll('.event__part--home, [class*="part--home"]')).map(e => e.textContent?.trim() || '');
+        const awayParts = Array.from(matchEl.querySelectorAll('.event__part--away, [class*="part--away"]')).map(e => e.textContent?.trim() || '');
+        const hasServeHome = !!matchEl.querySelector('.icon--serveHome, [class*="serveHome"]');
+        const hasServeAway = !!matchEl.querySelector('.icon--serveAway, [class*="serveAway"]');
+
         return {
             time: getTimeText(matchEl),
             homeScore: toIntScore(homeScoreTxt),
@@ -366,7 +372,12 @@
             homeRed,
             awayRed,
             homeYellow,
-            awayYellow
+            awayYellow,
+            // Tennis
+            homeParts: homeParts.join(','),
+            awayParts: awayParts.join(','),
+            serveHome: hasServeHome,
+            serveAway: hasServeAway
         };
     }
 
@@ -437,7 +448,11 @@
                 prev.homeRed !== curr.homeRed ||
                 prev.awayRed !== curr.awayRed ||
                 prev.homeYellow !== curr.homeYellow ||
-                prev.awayYellow !== curr.awayYellow;
+                prev.awayYellow !== curr.awayYellow ||
+                prev.homeParts !== curr.homeParts ||
+                prev.awayParts !== curr.awayParts ||
+                prev.serveHome !== curr.serveHome ||
+                prev.serveAway !== curr.serveAway;
 
             if (!changed) return;
 
@@ -498,49 +513,110 @@
             if (!stageText.includes("'")) stageText += "'";
         }
 
-
         // Clonar el elemento para capturar el HTML
         const clonedElement = matchElement.cloneNode(true);
-        // Remover el botón de overlay del HTML clonado
         const overlayBtn = clonedElement.querySelector('.fc-overlay-btn');
         if (overlayBtn) overlayBtn.remove();
 
-        // Obtener HTML limpio
         const matchHtml = clonedElement.outerHTML;
         const matchId = getMatchIdentifier(matchElement);
         const matchMid = extractMatchMid(matchUrl);
 
-        // Extract flags from class (e.g. fl_81)
-        const getFlagUrl = (sel) => {
-            const el = matchElement.querySelector(sel);
-            if (!el) return '';
-            const m = el.className.match(/fl_(\d+)/);
-            return m ? `https://static.flashscore.com/res/image/data/flags/24x18/${m[1]}.png` : '';
+        // Extract flags - robust approach using getAttribute('class')
+        const extractFlag = (side) => {
+            // Helper: safely extract fl_XXX from an element's class attribute
+            const getFl = (el) => {
+                if (!el) return null;
+                // Use getAttribute('class') for reliable string, not .className which may be DOMTokenList/SVGAnimatedString
+                const cls = el.getAttribute ? el.getAttribute('class') : null;
+                if (!cls || typeof cls !== 'string') return null;
+                const m = cls.match(/fl_(\d+)/);
+                return m ? `https://static.flashscore.com/res/image/data/flags/24x18/${m[1]}.png` : null;
+            };
+            
+            // Strategy 1: Look inside participant areas
+            const parentSels = [
+                `.event__participant--${side}`,
+                `[class*="participant--${side}"]`
+            ];
+            for (const sel of parentSels) {
+                const parent = matchElement.querySelector(sel);
+                if (!parent) continue;
+                const parentResult = getFl(parent);
+                if (parentResult) return parentResult;
+                const children = parent.querySelectorAll('*');
+                for (const child of children) {
+                    const childResult = getFl(child);
+                    if (childResult) return childResult;
+                }
+            }
+            
+            // Strategy 2: Logo elements with flag class  
+            const logoSels = [
+                `.event__logo--${side}`,
+                `[class*="logo--${side}"]`
+            ];
+            for (const sel of logoSels) {
+                const el = matchElement.querySelector(sel);
+                const result = getFl(el);
+                if (result) return result;
+                if (el) {
+                    const img = el.tagName === 'IMG' ? el : el.querySelector('img');
+                    if (img && img.src && (img.src.includes('flag') || img.src.includes('fl_'))) return img.src;
+                }
+            }
+            
+            // Strategy 3: Broad scan — ALL elements in match element
+            const all = matchElement.querySelectorAll('*');
+            const flagUrls = [];
+            for (const el of all) {
+                const result = getFl(el);
+                if (result) flagUrls.push(result);
+            }
+            const uniqueFlags = [...new Set(flagUrls)];
+            const idx = side === 'home' ? 0 : 1;
+            if (uniqueFlags.length > idx) return uniqueFlags[idx];
+            
+            return '';
         };
 
-        const homeFlag = getFlagUrl('.event__logo--home.flag');
-        const awayFlag = getFlagUrl('.event__logo--away.flag');
+        const homeFlag = extractFlag('home');
+        const awayFlag = extractFlag('away');
+        console.log('[FC Overlay] Flags:', { homeFlag, awayFlag });
 
         // Tennis Logic
-        const homeService = !!matchElement.querySelector('.icon--serveHome');
-        const awayService = !!matchElement.querySelector('.icon--serveAway');
+        const homeService = !!matchElement.querySelector('.icon--serveHome, [class*="icon--serve"][class*="Home"], [class*="serveHome"]');
+        const awayService = !!matchElement.querySelector('.icon--serveAway, [class*="icon--serve"][class*="Away"], [class*="serveAway"]');
 
-        const hp = Array.from(matchElement.querySelectorAll('.event__part--home'));
-        const ap = Array.from(matchElement.querySelectorAll('.event__part--away'));
+        // Try multiple selectors for set/game score parts
+        let hp = Array.from(matchElement.querySelectorAll('.event__part--home'));
+        let ap = Array.from(matchElement.querySelectorAll('.event__part--away'));
+        
+        // Fallback selectors if primary ones fail
+        if (hp.length === 0) hp = Array.from(matchElement.querySelectorAll('[class*="part--home"]'));
+        if (ap.length === 0) ap = Array.from(matchElement.querySelectorAll('[class*="part--away"]'));
+        
+        // Another fallback: try score__part pattern
+        if (hp.length === 0 && ap.length === 0) {
+            const allParts = Array.from(matchElement.querySelectorAll('[class*="score__part"]'));
+            if (allParts.length >= 2) {
+                for (let i = 0; i < allParts.length; i++) {
+                    if (i % 2 === 0) hp.push(allParts[i]);
+                    else ap.push(allParts[i]);
+                }
+            }
+        }
+        
         const count = Math.min(hp.length, ap.length);
         const setScores = [];
         let homeGamePoints = '';
         let awayGamePoints = '';
 
+        const isPoint = (v) => ['0','15','30','40','A','Ad'].includes(v);
+
         for (let i = 0; i < count; i++) {
             const h = (hp[i].textContent || '').trim();
             const a = (ap[i].textContent || '').trim();
-            // Check if points (last col, distinctive values)
-            const isPoint = (v) => ['0','15','30','40','A','Ad'].includes(v);
-            
-            // Only consider last column as points if it looks like points. 
-            // Validating against common set scores (usually < 20 except tiebreaks).
-            // Points: 0, 15, 30, 40, Ad.
             
             if (i === count - 1 && (isPoint(h) || isPoint(a))) {
                 homeGamePoints = h;
@@ -549,6 +625,13 @@
                 setScores.push(`${h} ${a}`);
             }
         }
+        
+        // Debug
+        console.log('[FC Overlay] Tennis extract:', {
+            homeFlag, awayFlag, homeService, awayService,
+            setScores, homeGamePoints, awayGamePoints,
+            partsHome: hp.length, partsAway: ap.length
+        });
 
         return {
             matchId,
@@ -566,12 +649,10 @@
             stage: stageText,
             homeLogo: matchElement.querySelector('img[alt]')?.src || '',
             awayLogo: matchElement.querySelectorAll('img[alt]')[1]?.src || '',
-            // New fields
             homeFlag, awayFlag,
             homeService, awayService,
             setScores,
             homeGamePoints, awayGamePoints,
-            
             url: matchUrl,
             homeHref: getTeamHref(matchElement, '.event__participant--home'),
             awayHref: getTeamHref(matchElement, '.event__participant--away'),
@@ -585,7 +666,6 @@
         const anchor = headerBody.querySelector('a[href]');
         let href = anchor ? anchor.getAttribute('href') : '';
         if (href && !href.startsWith('http')) href = `https://www.flashscore.es${href}`;
-        // build a href that can signal the page to open the clasificación tab
         let hrefWithParam = href || '';
         try {
             if (hrefWithParam) {
@@ -593,9 +673,7 @@
                 u.searchParams.set('fc_open_tab', 'classification');
                 hrefWithParam = u.toString();
             }
-        } catch (e) {
-            // ignore
-        }
+        } catch (e) { }
 
         return {
             competitionId: `${categoryText}:${titleText}`,
@@ -663,7 +741,7 @@
                         competition: competitionData
                     });
                     btn.classList.remove('active');
-                    untrackMatch(matchData.matchId); // UNTRACK IT
+                    untrackMatch(matchData.matchId);
                     stopLiveTracking(matchData.matchId);
                 } catch (error) {
                     console.error('No se pudo eliminar el overlay:', error);
@@ -676,9 +754,8 @@
                         competition: competitionData
                     });
                     btn.classList.add('active');
-                    trackMatch(matchData.matchId); // TRACK IT
+                    trackMatch(matchData.matchId);
                     startLiveTracking(matchElement);
-                    // Index team hrefs from this match
                     try { if (matchData.homeTeam && matchData.homeHref) indexTeam(matchData.homeTeam, matchData.homeHref); } catch (e) { }
                     try { if (matchData.awayTeam && matchData.awayHref) indexTeam(matchData.awayTeam, matchData.awayHref); } catch (e) { }
                 } catch (error) {
@@ -691,7 +768,6 @@
         matchElement.style.position = 'relative';
         matchElement.appendChild(btn);
 
-        // Check initial state
         const mid = getMatchIdentifier(matchElement);
         const tracked = loadTrackedMatches();
         if (tracked.includes(mid)) {
@@ -722,7 +798,6 @@
 
     function tryOpenClassificationTabOnPage() {
         try {
-            // Check sessionStorage flag OR URL query param
             const urlParams = new URLSearchParams(window.location.search);
             const param = urlParams.get('fc_open_tab');
             const desired = sessionStorage.getItem('fc_open_tab') || param;
@@ -735,7 +810,6 @@
                     candidates[0].click();
                     sessionStorage.removeItem('fc_open_tab');
                     sessionStorage.removeItem('fc_open_href');
-                    // remove fc_open_tab from URL if present
                     try {
                         if (param) {
                             urlParams.delete('fc_open_tab');
@@ -806,7 +880,6 @@
             const clickTeamOnce = () => {
                 const tn = normalize(teamName);
 
-                // FIRST: Try team index for direct navigation
                 const idx = loadTeamIndex();
                 const k = normalizeKey(teamName);
                 if (idx && idx[k]) {
@@ -819,7 +892,6 @@
                     } catch (e) { }
                 }
 
-                // SECOND: Try saved href if it's a team href
                 const savedHref = sessionStorage.getItem('fc_open_href') || urlParams.get('fc_open_href') || '';
                 if (savedHref && /\/equipo\//i.test(savedHref)) {
                     try {
@@ -830,7 +902,6 @@
                     } catch (e) { }
                 }
 
-                // THIRD: Find anchors with /equipo/ that match team name
                 const anchors = Array.from(document.querySelectorAll('a[href]'))
                     .filter(a => /\/equipo\//i.test(a.getAttribute('href')) || /\/team\//i.test(a.getAttribute('href')));
 
@@ -890,7 +961,6 @@
             }
         });
         if (shouldCheckMatches) setTimeout(addButtonsToAllMatches, 100);
-        // Update team index when DOM changes
         try { scanAndIndexTeams(); } catch (e) { }
         handleExpandableSections();
     });
@@ -900,15 +970,10 @@
         handleExpandableSections();
         observer.observe(document.body, { childList: true, subtree: true });
 
-        // Ping al servidor para verificar conexión
         sendToApp('ping', { message: 'Script cargado' });
-        // Intentar abrir una ficha de equipo si se solicitó desde la app (prioritario)
         tryOpenTeamFromParam();
-        // Intentar abrir la pestaña clasificación si venimos de una navegación desde la lista
         tryOpenClassificationTabOnPage();
-        // Start polling for commands from the native app (e.g., navigate in current tab)
         startPollingCommands();
-        // Initial scan of team links and periodic rescans
         try { scanAndIndexTeams(); } catch (e) { }
         setInterval(() => { try { scanAndIndexTeams(); } catch (e) { } }, 5000);
     }

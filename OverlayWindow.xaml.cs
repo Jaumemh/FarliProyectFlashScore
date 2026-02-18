@@ -326,11 +326,11 @@ namespace FlashscoreOverlay
                             if (!string.IsNullOrWhiteSpace(res.AwayFlag)) existing.AwayFlag = res.AwayFlag;
                             if (res.HomeSets != null) existing.HomeSets = res.HomeSets;
                             if (res.AwaySets != null) existing.AwaySets = res.AwaySets;
-                            if (res.HomeGamePoints != null) existing.HomeGamePoints = res.HomeGamePoints;
-                            if (res.AwayGamePoints != null) existing.AwayGamePoints = res.AwayGamePoints;
+                            if (!string.IsNullOrEmpty(res.HomeGamePoints)) existing.HomeGamePoints = res.HomeGamePoints;
+                            if (!string.IsNullOrEmpty(res.AwayGamePoints)) existing.AwayGamePoints = res.AwayGamePoints;
                             existing.HomeService = res.HomeService;
                             existing.AwayService = res.AwayService;
-                            if (res.SetScores != null) existing.SetScores = res.SetScores;
+                            if (res.SetScores != null && res.SetScores.Count > 0) existing.SetScores = res.SetScores;
 
                             existing.Html = res.Html;
                             anyUpdated = true;
@@ -581,6 +581,16 @@ namespace FlashscoreOverlay
                 : (string.IsNullOrWhiteSpace(timeLabel) ? "\u2014" : timeLabel);
             var displayStageLabel = isDescanso ? string.Empty : stage;
 
+            // For tennis, use the full stage as the time label (e.g. "2º Set" instead of "2")
+            var isTennisMatch = !string.IsNullOrWhiteSpace(md.HomeFlag) || !string.IsNullOrWhiteSpace(md.AwayFlag)
+                || (md.Url?.Contains("/tenis/") == true) || (md.Url?.Contains("/tennis/") == true)
+                || (md.SetScores != null && md.SetScores.Count > 0);
+            if (isTennisMatch && !string.IsNullOrWhiteSpace(stage))
+            {
+                displayTimeLabel = stage;
+                displayStageLabel = string.Empty;
+            }
+
             return new OverlayDisplayData
             {
                 MatchId = md.MatchId,
@@ -640,6 +650,7 @@ namespace FlashscoreOverlay
             // Explicit LIVE states (Descanso uses red style too as requested)
             if (stage.Contains("descanso") || stage.Contains("en directo") || stage.Contains("en curso") || stage.Contains("juego") || stage.Contains("gol")) return true;
             if (stage.Contains("parte") || stage.Contains("tiempo") || stage.Contains("prórroga") || stage.Contains("extra")) return true;
+            if (stage.Contains("set")) return true; // Tennis: "1º Set", "2º Set", etc.
             if (stage.Contains("'") || time.Contains("'")) return true;
 
             // Heuristic for time: if starts with digit and NO colon/dot (distinguish from 15:00 or 15.05.)
@@ -863,12 +874,11 @@ namespace FlashscoreOverlay
         }}
         
         .flag-icon {{
-            width: 18px;
-            height: 13px;
+            width: 16px;
+            height: 12px;
             object-fit: cover;
             flex-shrink: 0;
-            border-radius: 2px;
-            cursor: pointer;
+            border-radius: 1px;
         }}
 
         .team-name {{
@@ -882,19 +892,22 @@ namespace FlashscoreOverlay
             cursor: pointer;
             transition: color 0.15s ease;
         }}
-        
+
         /* Tennis Service Indicator */
         .service-icon {{
-            display: inline-block;
-            width: 6px;
-            height: 6px;
-            background-color: #e8e8e8; /* or yellow like tennis ball? screenshot shows white/grey icon */
-            border-radius: 50%;
-            margin-left: 6px;
-            opacity: 0.8;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 10px;
+            height: 10px;
+            margin-left: 4px;
+            flex-shrink: 0;
+            color: #8a8a9a;
+            font-size: 10px;
+            line-height: 1;
         }}
 
-        /* Score column */
+        /* Score column (standard football) */
         .score-col {{
             display: flex;
             flex-direction: column;
@@ -904,36 +917,6 @@ namespace FlashscoreOverlay
             padding-left: 10px;
             flex-shrink: 0;
         }}
-        
-        /* Tennis Score Grid */
-        .tennis-score-col {{
-            display: flex;
-            flex-direction: row;
-            align-items: center;
-            gap: 12px;
-            margin-left: auto;
-            padding-left: 10px;
-            flex-shrink: 0;
-            font-variant-numeric: tabular-nums;
-        }}
-        
-        .tennis-sets {{
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-            align-items: flex-end;
-        }}
-        
-        .tennis-points {{
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-            align-items: center;
-            min-width: 24px;
-            padding: 2px 4px;
-            background: rgba(255,255,255,0.05); /* Slight bg for points column */
-            border-radius: 4px;
-        }}
 
         .score-val {{
             font-weight: 700;
@@ -942,23 +925,98 @@ namespace FlashscoreOverlay
             min-width: 16px;
             text-align: center;
         }}
-        
-        .set-val {{
+
+        /* === Tennis Score Grid === */
+        .tennis-row {{
+            display: flex;
+            align-items: center;
+            background: var(--row-bg);
+            border-bottom: 1px solid var(--border-row);
+            padding: 6px 14px;
+            position: relative;
+            text-decoration: none;
+            color: inherit;
+            transition: background 0.12s ease-out;
+            min-height: 52px;
+            cursor: pointer;
+        }}
+        .tennis-row:hover {{ background: var(--row-hover); }}
+        .tennis-row:last-child {{ border-bottom: none; }}
+
+        .tennis-body {{
+            display: flex;
+            align-items: center;
+            flex: 1;
+            min-width: 0;
+        }}
+
+        .tennis-names {{
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            flex: 1;
+            min-width: 0;
+        }}
+
+        .tennis-player {{
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            min-width: 0;
+        }}
+
+        .tennis-player .team-name {{
+            flex: 1;
+            min-width: 0;
+        }}
+
+        .tennis-scores {{
+            display: flex;
+            align-items: stretch;
+            gap: 0;
+            margin-left: 8px;
+            flex-shrink: 0;
+            font-variant-numeric: tabular-nums;
+        }}
+
+        .tennis-score-col {{
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 3px;
+            min-width: 20px;
+            padding: 0 3px;
+        }}
+
+        .tennis-score-col.sets-won {{
+            color: var(--color-primary);
+            font-weight: 700;
+            min-width: 22px;
+            margin-right: 4px;
+        }}
+
+        .tennis-score-col.set-score {{
+            color: #b0b0b8;
+        }}
+
+        .tennis-score-col.game-points {{
+            color: var(--text-main);
+            min-width: 24px;
+            margin-left: 6px;
+            padding: 2px 4px;
+            background: rgba(255, 255, 255, 0.06);
+            border-radius: 3px;
+        }}
+
+        .sc-val {{
             font-size: 12px;
-            color: #ccc;
-            min-width: 14px;
             text-align: center;
+            line-height: 1.3;
         }}
-        
-        .set-val.current {{
-            color: var(--color-primary);
+
+        .sc-val.bold {{
             font-weight: 700;
-        }}
-        
-        .point-val {{
-            font-size: 12px;
-            font-weight: 700;
-            color: var(--color-primary);
         }}
 
         .score-val.finished {{ color: var(--score-finished); }}
@@ -1023,8 +1081,8 @@ namespace FlashscoreOverlay
 
         // Double-click: navigate
         document.addEventListener('dblclick', (e) => {{
-            // Check if a team-item was clicked (team name or logo)
-            const teamItem = e.target.closest('.team-item');
+            // Check if a team-item or tennis-player was clicked
+            const teamItem = e.target.closest('.team-item, .tennis-player');
             if (teamItem) {{
                 e.preventDefault();
                 e.stopPropagation();
@@ -1051,7 +1109,7 @@ namespace FlashscoreOverlay
 
         // Right-click on match rows → remove immediately
         document.addEventListener('contextmenu', (e) => {{
-            const row = e.target.closest('.match-row');
+            const row = e.target.closest('.match-row, .tennis-row');
             if (row) {{
                 e.preventDefault();
                 const matchId = row.getAttribute('data-id') || '';
@@ -1135,85 +1193,81 @@ namespace FlashscoreOverlay
             if (isTennis) {{
                 const homeFlagSrc = match.homeFlag || placeholder;
                 const awayFlagSrc = match.awayFlag || placeholder;
-                
-                // Detailed scores fallback
+
+                // Sets won (total)
                 let homeSetsVal = match.homeSets;
                 let awaySetsVal = match.awaySets;
-                
-                // If we didn't scrape sets specifically but have main score, use it as sets
                 if (!homeSetsVal && !awaySetsVal && (match.homeScore || match.awayScore)) {{
-                     homeSetsVal = match.homeScore || '0';
-                     awaySetsVal = match.awayScore || '0';
+                    homeSetsVal = match.homeScore || '0';
+                    awaySetsVal = match.awayScore || '0';
                 }}
-                
                 homeSetsVal = homeSetsVal || '0';
                 awaySetsVal = awaySetsVal || '0';
-                
-                // Sets history
+
+                // Individual set scores
                 const setScores = match.setScores || [];
-                let parsedSets = setScores.map(s => {{
-                   const parts = s.split(' ');
-                   return {{ h: parts[0]||'-', a: parts[1]||'-' }};
+                const parsedSets = setScores.map(s => {{
+                    const parts = s.split(' ');
+                    return {{ h: parts[0] || '-', a: parts[1] || '-' }};
                 }});
-                
-                // Points
-                const homePts = match.homeGamePoints || '0';
-                const awayPts = match.awayGamePoints || '0';
-                
-                // Build sets HTML (all sets for Home in one line? No, usually columns per set)
-                // We'll iterate sets and build <span>s
-                
-                let homeSetsHtml = '';
-                let awaySetsHtml = '';
-                
+
+                // Game points (only use real values, not empty strings)
+                const homePts = match.homeGamePoints || '';
+                const awayPts = match.awayGamePoints || '';
+                const hasGamePoints = (homePts !== '' && homePts !== '0') || (awayPts !== '' && awayPts !== '0') || (homePts === '0' && awayPts !== '') || (awayPts === '0' && homePts !== '');
+
+                // Debug tennis data
+                console.log('Tennis Data:', match.matchId, 'Sets:', homeSetsVal, awaySetsVal, 'SetScores:', setScores, 'GamePts:', homePts, awayPts, 'Service:', match.homeService, match.awayService, 'HasPts:', hasGamePoints);
+
+                // Service indicator HTML (small circle, like Flashscore)
+                const homeServiceHtml = match.homeService ? `<span class='service-icon'>⊕</span>` : '';
+                const awayServiceHtml = match.awayService ? `<span class='service-icon'>⊕</span>` : '';
+
+                // Build score columns: [Sets Won] [Set1] [Set2] ... [Points]
+                let scoreColumnsHtml = '';
+
+                // 1. Sets won column
+                scoreColumnsHtml += `<div class='tennis-score-col sets-won'>
+                    <span class='sc-val bold'>${{homeSetsVal}}</span>
+                    <span class='sc-val bold'>${{awaySetsVal}}</span>
+                </div>`;
+
+                // 2. Individual set score columns
                 parsedSets.forEach(s => {{
-                    homeSetsHtml += `<span class='set-val'>${{s.h}}</span>&nbsp;`;
-                    awaySetsHtml += `<span class='set-val'>${{s.a}}</span>&nbsp;`;
+                    scoreColumnsHtml += `<div class='tennis-score-col set-score'>
+                        <span class='sc-val'>${{s.h}}</span>
+                        <span class='sc-val'>${{s.a}}</span>
+                    </div>`;
                 }});
-                
-                // Add current sets count highlighted or at start?
-                // Usually Flashscore shows: [Sets] [Set1] [Set2] ... [Points]
-                // Let's put Sets Count in specific color
-                
-                const homeServiceHtml = match.homeService ? `<span class='service-icon'></span>` : '';
-                const awayServiceHtml = match.awayService ? `<span class='service-icon'></span>` : '';
-                
+
+                // 3. Game points column (only if live AND we have real data)
+                if (isLive && hasGamePoints) {{
+                    scoreColumnsHtml += `<div class='tennis-score-col game-points'>
+                        <span class='sc-val bold'>${{homePts || '0'}}</span>
+                        <span class='sc-val bold'>${{awayPts || '0'}}</span>
+                    </div>`;
+                }}
+
                 return `
-            <div class='match-row tennis' data-id='${{matchId}}' data-url='${{matchUrl}}'>
+            <div class='tennis-row' data-id='${{matchId}}' data-url='${{matchUrl}}'>
                 <a href='${{matchUrl}}' class='row-link' aria-label='Ver partido'></a>
                 ${{timeColHtml}}
-                
-                <div class='teams-container'>
-                    <div class='team-item' data-team-name='${{homeName}}' data-team-href='${{homeHref}}' data-match-url='${{matchUrl}}'>
-                        <img class='flag-icon' src='${{homeFlagSrc}}' onerror=""this.onerror=null;this.src='${{placeholder}}'"" alt=''>
-                        <span class='team-name'>${{homeName}}</span>
-                        ${{homeServiceHtml}}
-                    </div>
-                    <div class='team-item' data-team-name='${{awayName}}' data-team-href='${{awayHref}}' data-match-url='${{matchUrl}}'>
-                        <img class='flag-icon' src='${{awayFlagSrc}}' onerror=""this.onerror=null;this.src='${{placeholder}}'"" alt=''>
-                        <span class='team-name'>${{awayName}}</span>
-                        ${{awayServiceHtml}}
-                    </div>
-                </div>
-                
-                <div class='tennis-score-col'>
-                     <!-- Sets History -->
-                     <div class='tennis-sets'>
-                        <div style='display:flex;gap:6px'>
-                           <span class='set-val current'>${{homeSetsVal}}</span>
-                           ${{homeSetsHtml}}
+                <div class='tennis-body'>
+                    <div class='tennis-names'>
+                        <div class='tennis-player' data-team-name='${{homeName}}' data-team-href='${{homeHref}}' data-match-url='${{matchUrl}}'>
+                            <img class='flag-icon' src='${{homeFlagSrc}}' onerror=""this.onerror=null;this.src='${{placeholder}}'"" alt=''>
+                            <span class='team-name'>${{homeName}}</span>
+                            ${{homeServiceHtml}}
                         </div>
-                        <div style='display:flex;gap:6px'>
-                           <span class='set-val current'>${{awaySetsVal}}</span>
-                           ${{awaySetsHtml}}
+                        <div class='tennis-player' data-team-name='${{awayName}}' data-team-href='${{awayHref}}' data-match-url='${{matchUrl}}'>
+                            <img class='flag-icon' src='${{awayFlagSrc}}' onerror=""this.onerror=null;this.src='${{placeholder}}'"" alt=''>
+                            <span class='team-name'>${{awayName}}</span>
+                            ${{awayServiceHtml}}
                         </div>
-                     </div>
-                     
-                     <!-- Points -->
-                     <div class='tennis-points'>
-                        <span class='point-val'>${{homePts}}</span>
-                        <span class='point-val'>${{awayPts}}</span>
-                     </div>
+                    </div>
+                    <div class='tennis-scores'>
+                        ${{scoreColumnsHtml}}
+                    </div>
                 </div>
             </div>`;
             }}
