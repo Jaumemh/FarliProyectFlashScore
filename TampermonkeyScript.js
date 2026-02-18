@@ -522,19 +522,43 @@
         const matchId = getMatchIdentifier(matchElement);
         const matchMid = extractMatchMid(matchUrl);
 
-        // Extract flags - robust approach using getAttribute('class')
+        // Extract flags — read actual background-image URL from computed style
         const extractFlag = (side) => {
-            // Helper: safely extract fl_XXX from an element's class attribute
-            const getFl = (el) => {
+            // Helper: extract the background-image URL from a flag element
+            const getBgUrl = (el) => {
                 if (!el) return null;
-                // Use getAttribute('class') for reliable string, not .className which may be DOMTokenList/SVGAnimatedString
+                // Check if this element has a flag class (fl_XXX)
                 const cls = el.getAttribute ? el.getAttribute('class') : null;
                 if (!cls || typeof cls !== 'string') return null;
-                const m = cls.match(/fl_(\d+)/);
-                return m ? `https://static.flashscore.com/res/image/data/flags/24x18/${m[1]}.png` : null;
+                if (!/\bfl_\d+\b/.test(cls) && !/\bflag\b/.test(cls)) return null;
+                // Read the actual background-image from computed style
+                try {
+                    const bg = getComputedStyle(el).backgroundImage;
+                    if (bg && bg !== 'none') {
+                        const m = bg.match(/url\(["']?([^"')]+)["']?\)/);
+                        if (m && m[1]) return m[1];
+                    }
+                } catch (e) { /* ignore */ }
+                return null;
             };
             
-            // Strategy 1: Look inside participant areas
+            // Strategy 1: Direct logo element for the side
+            const logoSels = [
+                `.event__logo--${side}`,
+                `[class*="logo--${side}"]`
+            ];
+            for (const sel of logoSels) {
+                const el = matchElement.querySelector(sel);
+                const url = getBgUrl(el);
+                if (url) return url;
+                // Also check for img src fallback
+                if (el) {
+                    const img = el.tagName === 'IMG' ? el : el.querySelector('img');
+                    if (img && img.src && img.src.startsWith('http')) return img.src;
+                }
+            }
+            
+            // Strategy 2: Look inside participant areas for nested flag elements
             const parentSels = [
                 `.event__participant--${side}`,
                 `[class*="participant--${side}"]`
@@ -542,36 +566,21 @@
             for (const sel of parentSels) {
                 const parent = matchElement.querySelector(sel);
                 if (!parent) continue;
-                const parentResult = getFl(parent);
-                if (parentResult) return parentResult;
+                const url = getBgUrl(parent);
+                if (url) return url;
                 const children = parent.querySelectorAll('*');
                 for (const child of children) {
-                    const childResult = getFl(child);
-                    if (childResult) return childResult;
+                    const childUrl = getBgUrl(child);
+                    if (childUrl) return childUrl;
                 }
             }
             
-            // Strategy 2: Logo elements with flag class  
-            const logoSels = [
-                `.event__logo--${side}`,
-                `[class*="logo--${side}"]`
-            ];
-            for (const sel of logoSels) {
-                const el = matchElement.querySelector(sel);
-                const result = getFl(el);
-                if (result) return result;
-                if (el) {
-                    const img = el.tagName === 'IMG' ? el : el.querySelector('img');
-                    if (img && img.src && (img.src.includes('flag') || img.src.includes('fl_'))) return img.src;
-                }
-            }
-            
-            // Strategy 3: Broad scan — ALL elements in match element
-            const all = matchElement.querySelectorAll('*');
+            // Strategy 3: Broad scan — ALL flag elements in match element, use position
+            const all = matchElement.querySelectorAll('[class*="fl_"], [class*="flag"]');
             const flagUrls = [];
             for (const el of all) {
-                const result = getFl(el);
-                if (result) flagUrls.push(result);
+                const url = getBgUrl(el);
+                if (url) flagUrls.push(url);
             }
             const uniqueFlags = [...new Set(flagUrls)];
             const idx = side === 'home' ? 0 : 1;
