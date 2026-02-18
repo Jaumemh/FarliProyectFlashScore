@@ -812,22 +812,28 @@ namespace FlashscoreOverlay
 
         /* Time / Stage column */
         .event__time {{
-            font-size: 12px;
+            font-size: 11px;
             color: var(--text-time);
-            min-width: 46px;
+            width: 70px;
             font-weight: 500;
             letter-spacing: 0.02em;
             text-align: center;
             flex-shrink: 0;
+            white-space: normal;
+            word-break: break-word;
+            line-height: 1.3;
         }}
 
         .event__stage {{
             color: var(--color-primary);
             font-weight: 700;
-            font-size: 12px;
-            min-width: 46px;
+            font-size: 11px;
+            width: 70px;
             text-align: center;
             flex-shrink: 0;
+            white-space: normal;
+            word-break: break-word;
+            line-height: 1.3;
         }}
 
         .event__stage--block {{
@@ -851,7 +857,7 @@ namespace FlashscoreOverlay
             flex-grow: 1;
             gap: 4px;
             justify-content: center;
-            margin-left: 10px;
+            margin-left: 14px;
             min-width: 0;
         }}
 
@@ -874,11 +880,12 @@ namespace FlashscoreOverlay
         }}
         
         .flag-icon {{
-            width: 16px;
-            height: 12px;
+            width: 18px;
+            height: 13px;
             object-fit: cover;
             flex-shrink: 0;
             border-radius: 1px;
+            margin-right: 8px;
         }}
 
         .team-name {{
