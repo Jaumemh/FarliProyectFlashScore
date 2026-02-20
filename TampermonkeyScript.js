@@ -51,6 +51,13 @@
         .fc-overlay-btn.active:hover {
             background-color: #0567ca;
         }
+        .headerLeague__wrapper {
+            cursor: context-menu;
+        }
+        .headerLeague__wrapper.fc-removing {
+            opacity: 0.5;
+            transition: opacity 0.3s;
+        }
     `);
 
     // ===== Team Index =====
@@ -81,34 +88,32 @@
         if (!href) return href;
 
         // 1. Extract path part starting from /equipo/ or /team/
+        // This effectively strips any malformed domain prefixes like www.flashscore.es/www.flashscore.es
         const match = href.toString().match(/(\/(?:equipo|team)\/.*)/i);
-        if (!match) return href;
+        if (!match) return href; // Return original if pattern not found
 
         let path = match[1];
 
-        // 2. Clean slashes
-        path = path.replace(/\/+/g, '/');
-        if (!path.startsWith('/')) path = '/' + path;
-
-        // 3. Strip known section suffixes FIRST (before slug fix)
-        path = path.replace(/\/(resumen|resultados|partidos|calendario|plantilla|noticias)\/?$/i, '');
-
-        // 4. Fix multi-segment slugs: /equipo/part1/part2/ID -> /equipo/part1-part2/ID
+        // 2. Fix multi-segment slugs: /equipo/part1/part2/ID -> /equipo/part1-part2/ID
+        // Heuristic: If we have 4+ segments (equipo/a/b/ID...), assume a/b should be a-b
         const segments = path.split('/').filter(p => p && !/flashscore/i.test(p));
         // segments[0] is 'equipo' or 'team'
 
         if (segments.length >= 4) {
+            // Check if 4th segment looks like an ID (min 4 chars)
             const idCandidate = segments[3];
             if (idCandidate && idCandidate.length >= 4) {
                 const newSlug = `${segments[1]}-${segments[2]}`;
+                // Reconstruct path: /equipo/new-slug/id/suffix
+                // Use the rest of segments from index 3 onwards
                 const rest = segments.slice(3).join('/');
                 path = `/${segments[0]}/${newSlug}/${rest}`;
             }
         }
 
-        // 5. Append /partidos/
-        if (!path.endsWith('/')) path += '/';
-        path += 'partidos/';
+        // 3. Clean slashes and prepend single domain
+        path = path.replace(/\/+/g, '/');
+        if (!path.startsWith('/')) path = '/' + path;
 
         return `https://www.flashscore.es${path}`;
     }
@@ -223,6 +228,10 @@
             } else if (json && json.action === 'removeMatch' && json.matchId) {
                 // Handle remote removal of match from overlay (e.g., right-click removal)
                 handleRemoteRemoveMatch(json.matchId);
+            } else if (json && json.action === 'removeMatches' && Array.isArray(json.matchIds)) {
+                json.matchIds.forEach(id => {
+                    if (id) handleRemoteRemoveMatch(id);
+                });
             } else if (json && json.action === 'removeAllMatches') {
                 // Handle remote removal of ALL matches (e.g., overlay X button)
                 handleRemoteRemoveAllMatches();
@@ -233,20 +242,18 @@
     }
 
     function handleRemoteRemoveMatch(matchId) {
-        // Find the match element
+        // Find the match element and update the button if it exists in the DOM
         const matchEl = document.getElementById(matchId);
-        if (!matchEl) return;
-
-        // Find and update the button
-        const btn = matchEl.querySelector('.fc-overlay-btn');
-        if (btn) {
-            btn.classList.remove('active');
+        if (matchEl) {
+            const btn = matchEl.querySelector('.fc-overlay-btn');
+            if (btn) {
+                btn.classList.remove('active');
+            }
         }
 
-        // Remove from tracked matches
+        // Always remove from tracked matches and stop live tracking,
+        // even if the element is not in the current DOM
         untrackMatch(matchId);
-
-        // Stop live tracking
         stopLiveTracking(matchId);
     }
 
@@ -754,6 +761,84 @@
         });
     }
 
+    // ===== RIGHT-CLICK ON SPORT HEADER: REMOVE ALL MATCHES OF THAT SPORT =====
+
+    /**
+     * Extract the sport name from a headerLeague__wrapper element.
+     * Uses the href of the competition link to determine the sport via SPORT_SLUG_MAP.
+     */
+    function extractSportFromHeader(headerWrapper) {
+        const body = headerWrapper.querySelector('.headerLeague__body');
+        if (!body) return '';
+        const anchor = body.querySelector('a[href]');
+        if (!anchor) return '';
+        const href = anchor.getAttribute('href') || '';
+        return extractSportFromHref(href);
+    }
+
+    /**
+     * Send a removeSport action to the C# app, which will remove ALL matches
+     * of that sport from the overlay and send removal commands back to browser tabs.
+     * Also clean up any locally visible matches in the DOM.
+     */
+    async function removeAllMatchesForSport(headerWrapper) {
+        const sport = extractSportFromHeader(headerWrapper);
+        if (!sport) {
+            console.warn('Could not determine sport from header');
+            return;
+        }
+
+        // Visual feedback
+        headerWrapper.classList.add('fc-removing');
+
+        try {
+            // Tell the C# app to remove all matches of this sport
+            await sendToApp('removeSport', { sport: sport });
+        } catch (err) {
+            console.error('Error sending removeSport to app:', err);
+        }
+
+        // Also clean up locally visible matches in the DOM that belong to this sport
+        // Walk siblings to find matches under this header
+        let sibling = headerWrapper.nextElementSibling;
+        while (sibling) {
+            if (sibling.classList && sibling.classList.contains('headerLeague__wrapper')) break;
+            const matchEls = [];
+            if (sibling.classList && sibling.classList.contains('event__match')) {
+                matchEls.push(sibling);
+            }
+            if (sibling.querySelectorAll) {
+                sibling.querySelectorAll('.event__match').forEach(m => matchEls.push(m));
+            }
+            for (const matchEl of matchEls) {
+                const mid = getMatchIdentifier(matchEl);
+                const btn = matchEl.querySelector('.fc-overlay-btn');
+                if (btn) btn.classList.remove('active');
+                untrackMatch(mid);
+                stopLiveTracking(mid);
+            }
+            sibling = sibling.nextElementSibling;
+        }
+
+        // Remove visual feedback
+        setTimeout(() => headerWrapper.classList.remove('fc-removing'), 500);
+    }
+
+    /**
+     * Attach right-click (contextmenu) listener on all headerLeague__wrapper elements.
+     */
+    function attachHeaderRightClickListeners() {
+        const headers = document.querySelectorAll('.headerLeague__wrapper:not(.fc-rightclick-bound)');
+        headers.forEach(header => {
+            header.classList.add('fc-rightclick-bound');
+            header.addEventListener('contextmenu', async function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                await removeAllMatchesForSport(header);
+            });
+        });
+    }
+
     function handleExpandableSections() {
         const expandButtons = document.querySelectorAll('[data-testid="wcl-accordionButton"]');
         expandButtons.forEach(button => {
@@ -939,11 +1024,14 @@
         // Update team index when DOM changes
         try { scanAndIndexTeams(); } catch (e) { }
         handleExpandableSections();
+        // Attach right-click listeners on any new headers
+        attachHeaderRightClickListeners();
     });
 
     function init() {
         addButtonsToAllMatches();
         handleExpandableSections();
+        attachHeaderRightClickListeners();
         observer.observe(document.body, { childList: true, subtree: true });
 
         // Ping al servidor para verificar conexión

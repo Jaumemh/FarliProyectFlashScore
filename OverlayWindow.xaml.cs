@@ -5,6 +5,7 @@ using System.Net.Http;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Diagnostics;
+using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -34,9 +35,11 @@ namespace FlashscoreOverlay
         // Key: MatchId (or OverlayId)
         private readonly Dictionary<string, MatchData> _matches = new();
         private readonly Dictionary<string, CompetitionData> _competitions = new();
+        private readonly HashSet<string> _highlightedMatches = new(StringComparer.Ordinal);
 
         private CancellationTokenSource? pollingCts;
         private bool _webViewReady;
+        private bool _scrollEnabled;
 
         public event Action<string>? MatchRemoved;
 
@@ -82,6 +85,7 @@ namespace FlashscoreOverlay
                 MatchWebView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
                 MatchWebView.CoreWebView2.Settings.AreDevToolsEnabled = true;
                 MatchWebView.CoreWebView2.WebMessageReceived += CoreWebView2_WebMessageReceived;
+                MatchWebView.NavigationCompleted += MatchWebView_NavigationCompleted;
                 _webViewReady = true;
 
                 RenderOverlay();
@@ -122,6 +126,31 @@ namespace FlashscoreOverlay
                         if (!string.IsNullOrWhiteSpace(msg.MatchId))
                         {
                             MatchRemoved?.Invoke(msg.MatchId!);
+                        }
+                        break;
+                    case "removeSport":
+                        if (msg.MatchIds != null)
+                        {
+                            foreach (var matchId in msg.MatchIds)
+                            {
+                                if (!string.IsNullOrWhiteSpace(matchId))
+                                {
+                                    MatchRemoved?.Invoke(matchId);
+                                }
+                            }
+                        }
+                        break;
+                    case "setMatchHighlight":
+                        if (!string.IsNullOrWhiteSpace(msg.MatchId) && msg.Highlighted.HasValue)
+                        {
+                            if (msg.Highlighted.Value)
+                            {
+                                _highlightedMatches.Add(msg.MatchId!);
+                            }
+                            else
+                            {
+                                _highlightedMatches.Remove(msg.MatchId!);
+                            }
                         }
                         break;
                 }
@@ -211,7 +240,7 @@ namespace FlashscoreOverlay
 
         private void CloseButton_Click(object sender, RoutedEventArgs e) => Close();
 
-        private void AdjustWindowHeight(int sportCount, int groupCount, int totalMatchCount)
+        private bool AdjustWindowHeight(int sportCount, int groupCount, int totalMatchCount)
         {
             double contentHeight;
             if (groupCount == 0)
@@ -232,6 +261,8 @@ namespace FlashscoreOverlay
             var maxAllowed = screenHeight * 0.85;
 
             Height = idealHeight > maxAllowed ? maxAllowed : idealHeight;
+
+            return idealHeight > maxAllowed;
         }
 
         private string GetSportForCompetition(CompetitionData? comp)
@@ -259,6 +290,7 @@ namespace FlashscoreOverlay
         {
             if (!_webViewReady || MatchWebView.CoreWebView2 == null) return;
 
+            PruneHighlightedMatches();
             var groups = _matches.Values
                 .GroupBy(m => GetCompetitionId(m))
                 .Select(g =>
@@ -301,7 +333,7 @@ namespace FlashscoreOverlay
                 .ToList();
 
             var totalMatches = groups.Sum(g => g.Matches.Count);
-            AdjustWindowHeight(sportGroups.Count, groups.Count, totalMatches);
+            var enableScroll = AdjustWindowHeight(sportGroups.Count, groups.Count, totalMatches);
 
             var settings = new JsonSerializerSettings
             {
@@ -310,13 +342,89 @@ namespace FlashscoreOverlay
             var payload = JsonConvert.SerializeObject(sportGroups, settings);
             var payloadBase64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(payload));
 
-            // Enable scroll when more than 1 match total
-            var enableScroll = totalMatches > 1;
-
-            var html = BuildOverlayHtml(payloadBase64, enableScroll);
+            var highlightedMatchesJson = JsonConvert.SerializeObject(_highlightedMatches);
+            var html = BuildOverlayHtml(payloadBase64, enableScroll, highlightedMatchesJson);
             MatchWebView.NavigateToString(html);
+            _ = SetScrollStateAsync(enableScroll);
 
             MatchTitle.Text = $"Flashscore ({_matches.Count})";
+        }
+
+        private void PruneHighlightedMatches()
+        {
+            var toRemove = _highlightedMatches.Where(id => !_matches.ContainsKey(id)).ToList();
+            foreach (var id in toRemove)
+            {
+                _highlightedMatches.Remove(id);
+            }
+        }
+
+        private async void MatchWebView_NavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
+        {
+            if (!e.IsSuccess) return;
+            await UpdateHeightFromWebViewAsync();
+        }
+
+        private async Task UpdateHeightFromWebViewAsync()
+        {
+            if (!_webViewReady || MatchWebView.CoreWebView2 == null) return;
+
+            try
+            {
+                var script = "Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)";
+                var raw = await MatchWebView.CoreWebView2.ExecuteScriptAsync(script);
+                if (string.IsNullOrWhiteSpace(raw)) return;
+
+                raw = raw.Trim();
+                if (raw.StartsWith("\"", StringComparison.Ordinal) && raw.EndsWith("\"", StringComparison.Ordinal))
+                {
+                    raw = raw[1..^1];
+                }
+
+                if (!double.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var contentHeight)) return;
+
+                var desiredHeight = TitleBarHeight + BorderExtra + contentHeight + PaddingTotal;
+                var screenHeight = SystemParameters.WorkArea.Height;
+                var maxAllowed = screenHeight * 0.85;
+                var clampedHeight = desiredHeight > maxAllowed ? maxAllowed : desiredHeight;
+                clampedHeight = Math.Max(clampedHeight, MinHeight);
+
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    if (Math.Abs(Height - clampedHeight) > 1)
+                    {
+                        Height = clampedHeight;
+                    }
+                });
+
+                var needsScroll = desiredHeight > maxAllowed;
+                await SetScrollStateAsync(needsScroll);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error ajustando altura del overlay: {ex.Message}");
+            }
+        }
+
+        private async Task SetScrollStateAsync(bool enable)
+        {
+            if (_scrollEnabled == enable || !_webViewReady || MatchWebView.CoreWebView2 == null) return;
+
+            _scrollEnabled = enable;
+            var value = enable ? "auto" : "hidden";
+
+            try
+            {
+                await MatchWebView.CoreWebView2.ExecuteScriptAsync($@"
+                    try {{
+                        document.body.style.overflowY = '{value}';
+                        document.body.style.overflowX = 'hidden';
+                    }} catch (e) {{}}");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error actualizando scroll del overlay: {ex.Message}");
+            }
         }
 
         private string GetCompetitionId(MatchData m) => m.CompetitionId ?? m.Stage ?? "default";
@@ -482,7 +590,7 @@ namespace FlashscoreOverlay
             return false;
         }
 
-        private string BuildOverlayHtml(string initialGroupsBase64, bool enableScroll)
+        private string BuildOverlayHtml(string initialGroupsBase64, bool enableScroll, string highlightedMatchesJson)
         {
             var overflowRule = enableScroll ? "overflow-y: auto;" : "overflow: hidden;";
 
@@ -539,9 +647,10 @@ namespace FlashscoreOverlay
         .competition-container {{
             margin-bottom: 6px;
             border-radius: 8px;
-            overflow: hidden;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+            overflow: visible;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
             background: var(--header-bg);
+            padding-bottom: 6px;
         }}
 
         .headerLeague {{
@@ -607,6 +716,7 @@ namespace FlashscoreOverlay
         .match-row-wrapper {{
             display: flex;
             flex-direction: column;
+            overflow: visible;
         }}
 
         .match-row {{
@@ -618,9 +728,16 @@ namespace FlashscoreOverlay
             position: relative;
             text-decoration: none;
             color: inherit;
-            transition: background 0.12s ease-out;
+            transition: background 0.12s ease-out, box-shadow 0.2s ease;
             min-height: 48px;
             cursor: pointer;
+            border-radius: 8px;
+            margin: 2px 0;
+        }}
+
+        .match-row--highlight {{
+            box-shadow: 0 0 0 2px rgba(199, 0, 53, 0.8);
+            z-index: 1;
         }}
 
         .match-row:hover {{ background: var(--row-hover); }}
@@ -790,7 +907,7 @@ namespace FlashscoreOverlay
             border-radius: 8px;
         }}
 
-        /* === Sport Header === */
+        /* === Sport Header (ESTILO BASE PRESERVADO) === */
         .sport-header {{
             display: flex;
             align-items: center;
@@ -841,6 +958,19 @@ namespace FlashscoreOverlay
 
         const container = document.getElementById('app-container');
         const placeholder = ""data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18'%3E%3Crect width='18' height='18' fill='%23333355' rx='2'/%3E%3C/svg%3E"";
+        const highlightedMatches = new Set({highlightedMatchesJson});
+
+        function applyHighlights() {{
+            const rows = container.querySelectorAll('.match-row');
+            rows.forEach(row => {{
+                const matchId = row.getAttribute('data-id') || '';
+                if (matchId && highlightedMatches.has(matchId)) {{
+                    row.classList.add('match-row--highlight');
+                }} else {{
+                    row.classList.remove('match-row--highlight');
+                }}
+            }});
+        }}
 
         function send(type, data) {{
             if (window.chrome?.webview) window.chrome.webview.postMessage(JSON.stringify({{ type, ...data }}));
@@ -884,8 +1014,42 @@ namespace FlashscoreOverlay
             }}
         }});
 
-        // Right-click on match rows → remove immediately
+        // Middle-click toggles border highlight for multiple matches
+        document.addEventListener('auxclick', (e) => {{
+            if (e.button !== 1) return;
+            const row = e.target.closest('.match-row');
+            if (!row) return;
+            e.preventDefault();
+            const matchId = row.getAttribute('data-id') || '';
+            if (!matchId) return;
+            const willHighlight = !highlightedMatches.has(matchId);
+            if (willHighlight) {{
+                highlightedMatches.add(matchId);
+            }} else {{
+                highlightedMatches.delete(matchId);
+            }}
+            applyHighlights();
+            send('setMatchHighlight', {{ MatchId: matchId, Highlighted: willHighlight }});
+        }});
+
+        // Right-click on match rows or sport headers
         document.addEventListener('contextmenu', (e) => {{
+            const sportHeader = e.target.closest('.sport-header');
+            if (sportHeader) {{
+                e.preventDefault();
+                const idsAttr = sportHeader.getAttribute('data-match-ids') || '';
+                const ids = idsAttr
+                    .split(',')
+                    .map(id => id.trim())
+                    .filter(Boolean)
+                    .map(id => decodeURIComponent(id));
+                const sportName = sportHeader.getAttribute('data-sport-name') || '';
+                if (ids.length) {{
+                    send('removeSport', {{ matchIds: ids, sport: sportName }});
+                }}
+                return;
+            }}
+
             const row = e.target.closest('.match-row');
             if (row) {{
                 e.preventDefault();
@@ -974,6 +1138,7 @@ namespace FlashscoreOverlay
             </div>`;
         }}
 
+        // LISTA DE EMOJIS BASE PRESERVADA EXACTAMENTE
         const SPORT_ICONS = {{
             'Fútbol': '⚽', 'Baloncesto': '🏀', 'Tenis': '🎾',
             'Hockey': '🏒', 'Hockey Hielo': '🏒', 'Balonmano': '🤾',
@@ -987,12 +1152,37 @@ namespace FlashscoreOverlay
             'Otros': '🏅'
         }};
 
-        function renderSportHeader(sportName) {{
+        function attrEscape(value) {{
+            return (value || '').replace(/'/g, '&#39;').replace(/""/g, '&quot;');
+        }}
+
+        function renderSportHeader(sportGroup) {{
+            const sportName = sportGroup?.sport || 'Otros';
             const icon = SPORT_ICONS[sportName] || '🏅';
-            return `<div class='sport-header'>
-                <span class='sport-header__icon'>${{icon}}</span>
-                <span class='sport-header__name'>${{sportName}}</span>
-            </div>`;
+            const matchIds = (sportGroup?.groups || [])
+                .flatMap(g => (g.matches || []).map(m => m.matchId || m.overlayId || ''))
+                .filter(Boolean);
+
+            const header = document.createElement('div');
+            header.className = 'sport-header';
+            header.setAttribute('data-sport-name', attrEscape(sportName));
+            if (matchIds.length) {{
+                const encoded = matchIds.map(id => encodeURIComponent(id));
+                header.setAttribute('data-match-ids', encoded.join(','));
+            }}
+
+            const iconSpan = document.createElement('span');
+            iconSpan.className = 'sport-header__icon';
+            iconSpan.textContent = icon;
+
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'sport-header__name';
+            nameSpan.textContent = sportName;
+
+            header.appendChild(iconSpan);
+            header.appendChild(nameSpan);
+
+            return header.outerHTML;
         }}
 
         function render(sportGroups) {{
@@ -1009,7 +1199,7 @@ namespace FlashscoreOverlay
 
                 // Sport header
                 const sportDiv = document.createElement('div');
-                sportDiv.innerHTML = renderSportHeader(sportName);
+                sportDiv.innerHTML = renderSportHeader(sportGroup);
                 if (sportDiv.firstChild) container.appendChild(sportDiv.firstChild);
 
                 // Competition groups under this sport
@@ -1034,6 +1224,7 @@ namespace FlashscoreOverlay
                     container.appendChild(compDiv);
                 }});
             }});
+            applyHighlights();
         }}
 
         try {{ render(initialGroups); }} catch(e) {{
@@ -1043,7 +1234,6 @@ namespace FlashscoreOverlay
 </body>
 </html>";
         }
-
 
         protected override void OnClosed(EventArgs e)
         {
@@ -1061,6 +1251,9 @@ namespace FlashscoreOverlay
             public string? TabId { get; set; }
             public string? Name { get; set; }
             public string? MatchUrl { get; set; }
+            public List<string>? MatchIds { get; set; }
+            public string? Sport { get; set; }
+            public bool? Highlighted { get; set; }
         }
 
         public class SportGroup

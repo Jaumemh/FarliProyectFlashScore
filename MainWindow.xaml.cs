@@ -176,6 +176,9 @@ namespace FlashscoreOverlay
                 case "removeMatch":
                     RemoveMatchFromOverlay(message.Data);
                     break;
+                case "removeSport":
+                    RemoveSportFromOverlay(message.Data);
+                    break;
                 case "showCompetitionLink":
                     ShowCompetitionLink(message.Data);
                     break;
@@ -252,20 +255,66 @@ namespace FlashscoreOverlay
             }
         }
 
+        private void RemoveSportFromOverlay(MessageData? data)
+        {
+            var sport = data?.Sport;
+            if (string.IsNullOrWhiteSpace(sport)) return;
+
+            // Find all matches whose competition sport matches the requested sport
+            var matchIdsToRemove = new List<string>();
+            foreach (var kvp in _activeMatches)
+            {
+                var matchId = kvp.Key;
+                var match = kvp.Value;
+                var competitionId = match.CompetitionId;
+                if (!string.IsNullOrWhiteSpace(competitionId) && _activeCompetitions.TryGetValue(competitionId, out var comp))
+                {
+                    if (string.Equals(comp.Sport, sport, StringComparison.OrdinalIgnoreCase))
+                    {
+                        matchIdsToRemove.Add(matchId);
+                    }
+                }
+            }
+
+            if (matchIdsToRemove.Count == 0) return;
+
+            // Remove each match and queue removal commands back to browser tabs
+            foreach (var matchId in matchIdsToRemove)
+            {
+                _activeMatches.Remove(matchId);
+
+                if (_matchTabMap.TryGetValue(matchId, out var tabId))
+                {
+                    QueueRemoveMatchCommand(tabId, matchId);
+                    _matchTabMap.Remove(matchId);
+                }
+            }
+
+            UpdateOverlayContent();
+            UpdateMatchCount();
+
+            if (_activeMatches.Count == 0)
+            {
+                _unifiedOverlay?.Close();
+            }
+        }
+
         private void OnMatchRemovedFromOverlay(string matchId)
         {
             if (_activeMatches.ContainsKey(matchId))
             {
+                var isClosingOverlay = _activeMatches.Count == 1;
                 _activeMatches.Remove(matchId);
-                
-                // Send removeMatch command to the browser tab that owns this match
+
                 if (_matchTabMap.TryGetValue(matchId, out var tabId))
                 {
-                    var command = new BrowserCommand { Action = "removeMatch", MatchId = matchId };
-                    pendingCommands[tabId] = command;
-                    _matchTabMap.Remove(matchId);
+                    QueueRemoveMatchCommand(tabId, matchId);
+                    if (!isClosingOverlay)
+                    {
+                        _matchTabMap.Remove(matchId);
+                    }
                 }
-                
+
                 UpdateOverlayContent();
                 UpdateMatchCount();
 
@@ -320,6 +369,43 @@ namespace FlashscoreOverlay
             pendingCommands[tabId] = cmd;
         }
 
+        private void QueueRemoveMatchCommand(string tabId, string matchId)
+        {
+            if (string.IsNullOrWhiteSpace(tabId) || string.IsNullOrWhiteSpace(matchId)) return;
+ 
+            if (pendingCommands.TryGetValue(tabId, out var existing))
+            {
+                if (existing.Action == "removeAllMatches") return;
+                if (existing.Action == "removeMatches")
+                {
+                    if (existing.MatchIds == null) existing.MatchIds = new List<string>();
+                    if (!existing.MatchIds.Contains(matchId))
+                        existing.MatchIds.Add(matchId);
+                    return;
+                }
+                if (existing.Action == "removeMatch")
+                {
+                    var ids = new List<string>();
+                    if (!string.IsNullOrWhiteSpace(existing.MatchId))
+                        ids.Add(existing.MatchId);
+                    if (!ids.Contains(matchId))
+                        ids.Add(matchId);
+                    pendingCommands[tabId] = new BrowserCommand
+                    {
+                        Action = "removeMatches",
+                        MatchIds = ids
+                    };
+                    return;
+                }
+            }
+
+            pendingCommands[tabId] = new BrowserCommand
+            {
+                Action = "removeMatch",
+                MatchId = matchId
+            };
+        }
+
         private void UpdateMatchCount()
         {
             MatchCount.Text = _activeMatches.Count.ToString();
@@ -369,6 +455,9 @@ namespace FlashscoreOverlay
 
         [JsonProperty("tabId")]
         public string? TabId { get; set; }
+
+        [JsonProperty("sport")]
+        public string? Sport { get; set; }
     }
 
     public class MatchData
@@ -465,5 +554,8 @@ namespace FlashscoreOverlay
 
         [JsonProperty("matchId")]
         public string? MatchId { get; set; }
+
+        [JsonProperty("matchIds")]
+        public List<string>? MatchIds { get; set; }
     }
 }
