@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 // ==UserScript==
 // @name         Flashcore Overlay
 // @namespace    http://tampermonkey.net/

@@ -911,10 +911,10 @@ namespace FlashscoreOverlay
             margin: 2px 0;
         }}
 
-        .match-row--highlight {
+        .match-row--highlight {{
             box-shadow: 0 0 0 2px rgba(199, 0, 53, 0.8);
             z-index: 1;
-        }
+        }}
 
         .match-row:hover {{ background: var(--row-hover); }}
         .match-row:last-child {{ border-bottom: none; }}
@@ -1533,7 +1533,7 @@ namespace FlashscoreOverlay
                     <span class='${{scoreClass}}'>${{awayScoreText}}</span>
                 </div>
             </div>`;
-        }
+        }}
 
         function render(sportGroups) {{
             if (!sportGroups || sportGroups.length === 0) {{
