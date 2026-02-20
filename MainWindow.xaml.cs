@@ -518,6 +518,35 @@ namespace FlashscoreOverlay
 
         [JsonProperty("tabId")]
         public string? TabId { get; set; }
+
+        // Tennis specific fields
+        [JsonProperty("homeFlag")]
+        public string? HomeFlag { get; set; }
+
+        [JsonProperty("awayFlag")]
+        public string? AwayFlag { get; set; }
+
+        [JsonProperty("homeSets")]
+        public string? HomeSets { get; set; }
+
+        [JsonProperty("awaySets")]
+        public string? AwaySets { get; set; }
+
+        [JsonProperty("homeGamePoints")]
+        public string? HomeGamePoints { get; set; }
+
+        [JsonProperty("awayGamePoints")]
+        public string? AwayGamePoints { get; set; }
+
+        [JsonProperty("homeService")]
+        public bool HomeService { get; set; }
+
+        [JsonProperty("awayService")]
+        public bool AwayService { get; set; }
+
+        // List of set scores (e.g. "6 4 6", "4 6 2") 
+        [JsonProperty("setScores")]
+        public List<string>? SetScores { get; set; }
     }
 
     public class CompetitionData

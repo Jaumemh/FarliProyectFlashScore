@@ -13,6 +13,9 @@
         AllowsTransparency="True"
         Topmost="True"
         ShowActivated="True"
+        WindowStartupLocation="Manual"
+        Left="18"
+        Top="106"
         Loaded="Window_Loaded">
     
     <Border CornerRadius="10"
@@ -55,6 +58,17 @@
                             HorizontalAlignment="Right"
                             VerticalAlignment="Center"
                             Margin="0,0,4,0">
+                    <Button x:Name="ReloadButton"
+                            Width="28"
+                            Height="24"
+                            Content="↺"
+                            FontSize="13"
+                            Click="ReloadButton_Click"
+                            Background="#FF1a1a35"
+                            Foreground="#FF9999aa"
+                            BorderBrush="Transparent"
+                            Cursor="Hand"
+                            Margin="0,0,4,0"/>
                     <Button Width="28"
                             Height="24"
                             Content="✕"

@@ -454,10 +454,26 @@ namespace FlashscoreOverlay
                     {
                         if (res != null && _matches.TryGetValue(res.OverlayId ?? res.MatchId!, out var existing))
                         {
-                            existing.Time = res.Time;
-                            existing.Stage = res.Stage;
-                            existing.HomeScore = res.HomeScore;
-                            existing.AwayScore = res.AwayScore;
+                            if (!string.IsNullOrWhiteSpace(res.Time)) existing.Time = res.Time;
+                            if (!string.IsNullOrWhiteSpace(res.Stage)) existing.Stage = res.Stage;
+                            if (!string.IsNullOrWhiteSpace(res.HomeScore)) existing.HomeScore = res.HomeScore;
+                            if (!string.IsNullOrWhiteSpace(res.AwayScore)) existing.AwayScore = res.AwayScore;
+                            
+                            // Update logos if we found them
+                            if (!string.IsNullOrWhiteSpace(res.HomeLogo)) existing.HomeLogo = res.HomeLogo;
+                            if (!string.IsNullOrWhiteSpace(res.AwayLogo)) existing.AwayLogo = res.AwayLogo;
+
+                            // Update Tennis specific fields
+                            if (!string.IsNullOrWhiteSpace(res.HomeFlag)) existing.HomeFlag = res.HomeFlag;
+                            if (!string.IsNullOrWhiteSpace(res.AwayFlag)) existing.AwayFlag = res.AwayFlag;
+                            if (res.HomeSets != null) existing.HomeSets = res.HomeSets;
+                            if (res.AwaySets != null) existing.AwaySets = res.AwaySets;
+                            if (!string.IsNullOrEmpty(res.HomeGamePoints)) existing.HomeGamePoints = res.HomeGamePoints;
+                            if (!string.IsNullOrEmpty(res.AwayGamePoints)) existing.AwayGamePoints = res.AwayGamePoints;
+                            existing.HomeService = res.HomeService;
+                            existing.AwayService = res.AwayService;
+                            if (res.SetScores != null && res.SetScores.Count > 0) existing.SetScores = res.SetScores;
+
                             existing.Html = res.Html;
                             anyUpdated = true;
                         }
@@ -481,7 +497,139 @@ namespace FlashscoreOverlay
                 var parser = new HtmlParser();
                 var document = await parser.ParseDocumentAsync(html, token);
                 var el = FindMatchElement(match, document);
-                if (el == null) return null;
+                
+                // --- Tennis Data Extraction ---
+                string? homeLogo = match.HomeLogo;
+                string? awayLogo = match.AwayLogo;
+                string? homeFlag = match.HomeFlag; 
+                string? awayFlag = match.AwayFlag;
+                string? homeSets = match.HomeSets;
+                string? awaySets = match.AwaySets;
+                string? homeGamePoints = match.HomeGamePoints;
+                string? awayGamePoints = match.AwayGamePoints;
+                bool homeService = match.HomeService;
+                bool awayService = match.AwayService;
+                var setScores = match.SetScores != null ? new List<string>(match.SetScores) : new List<string>();
+
+                // 1. Logos & Flags
+                var homeImg = document.QuerySelector(".participant__home .participant__image img") 
+                           ?? document.QuerySelector(".duelParticipant__home .participant__image img");
+                var awayImg = document.QuerySelector(".participant__away .participant__image img")
+                           ?? document.QuerySelector(".duelParticipant__away .participant__image img");
+
+                if (homeImg != null) homeLogo = homeImg.GetAttribute("src");
+                if (awayImg != null) awayLogo = awayImg.GetAttribute("src");
+
+                var homeFlagImg = document.QuerySelector(".duelParticipant__home .participant__image--country") 
+                               ?? document.QuerySelector(".duelParticipant__home .participant__country img");
+                var awayFlagImg = document.QuerySelector(".duelParticipant__away .participant__image--country")
+                               ?? document.QuerySelector(".duelParticipant__away .participant__country img");
+
+                if (homeFlagImg != null) homeFlag = EnsureAbsoluteUrl(homeFlagImg.GetAttribute("src"));
+                if (awayFlagImg != null) awayFlag = EnsureAbsoluteUrl(awayFlagImg.GetAttribute("src"));
+
+                if (homeFlag == null)
+                {
+                    var homeFlagSpan = document.QuerySelector(".duelParticipant__home .flag");
+                    if (homeFlagSpan != null)
+                    {
+                         var classes = homeFlagSpan.ClassName;
+                         var matchFlag = System.Text.RegularExpressions.Regex.Match(classes, @"fl_(\d+)");
+                         if (matchFlag.Success)
+                         {
+                             homeFlag = $"https://static.flashscore.com/res/image/data/flags/24x18/{matchFlag.Groups[1].Value}.png";
+                         }
+                    }
+                }
+                
+                if (awayFlag == null)
+                {
+                    var awayFlagSpan = document.QuerySelector(".duelParticipant__away .flag");
+                    if (awayFlagSpan != null)
+                    {
+                         var classes = awayFlagSpan.ClassName;
+                         var matchFlag = System.Text.RegularExpressions.Regex.Match(classes, @"fl_(\d+)");
+                         if (matchFlag.Success)
+                         {
+                             awayFlag = $"https://static.flashscore.com/res/image/data/flags/24x18/{matchFlag.Groups[1].Value}.png";
+                         }
+                    }
+                }
+
+                // 2. Scores (Sets & Points) in Detail Page
+                var detailScore = document.QuerySelector(".detailScore__matchInfo");
+                if (detailScore != null)
+                {
+                    var rows = detailScore.QuerySelectorAll(".detailScore__row");
+                    if (rows.Length >= 2)
+                    {
+                        var homeRow = rows[0];
+                        var awayRow = rows[1];
+
+                        homeSets = homeRow.QuerySelector(".detailScore__score")?.TextContent;
+                        awaySets = awayRow.QuerySelector(".detailScore__score")?.TextContent;
+
+                        homeService = homeRow.QuerySelector(".detailScore__serving") != null;
+                        awayService = awayRow.QuerySelector(".detailScore__serving") != null;
+                        
+                        var homeParts = homeRow.QuerySelectorAll(".detailScore__part");
+                        var awayParts = awayRow.QuerySelectorAll(".detailScore__part");
+
+                        int count = Math.Max(homeParts.Length, awayParts.Length);
+                        var tempSetScores = new List<string>();
+
+                        for(int i=0; i<count; i++)
+                        {
+                            var h = i < homeParts.Length ? homeParts[i].TextContent : "-";
+                            var a = i < awayParts.Length ? awayParts[i].TextContent : "-";
+                            
+                            if (!string.IsNullOrWhiteSpace(h) || !string.IsNullOrWhiteSpace(a))
+                            {
+                                h = h?.Trim() ?? "-";
+                                a = a?.Trim() ?? "-";
+                                
+                                bool isPoints = (h == "0" || h=="15" || h=="30" || h=="40" || h=="Ad" || a=="0" || a=="15" || a=="30" || a=="40" || a=="Ad");
+                                
+                                if (isPoints && i == count - 1) 
+                                {
+                                    homeGamePoints = h;
+                                    awayGamePoints = a;
+                                }
+                                else
+                                {
+                                     tempSetScores.Add($"{h} {a}");
+                                }
+                            }
+                        }
+                        
+                        if (tempSetScores.Count > 0)
+                        {
+                             setScores = tempSetScores;
+                        }
+                    }
+                }
+
+                if (el == null) 
+                {
+                     return new MatchData
+                    {
+                        MatchId = match.MatchId,
+                        OverlayId = match.OverlayId,
+                        HomeLogo = homeLogo,
+                        AwayLogo = awayLogo,
+                        HomeFlag = homeFlag,
+                        AwayFlag = awayFlag, 
+                        Html = html,
+                        
+                        HomeSets = homeSets,
+                        AwaySets = awaySets,
+                        HomeGamePoints = homeGamePoints,
+                        AwayGamePoints = awayGamePoints,
+                        HomeService = homeService,
+                        AwayService = awayService,
+                        SetScores = setScores
+                    };
+                }
 
                 return new MatchData
                 {
@@ -491,7 +639,19 @@ namespace FlashscoreOverlay
                     Stage = el.QuerySelector(".event__stage")?.TextContent,
                     HomeScore = el.QuerySelector(".event__score--home")?.TextContent,
                     AwayScore = el.QuerySelector(".event__score--away")?.TextContent,
-                    Html = html
+                    HomeLogo = homeLogo,
+                    AwayLogo = awayLogo,
+                    Html = html,
+                    
+                    HomeFlag = homeFlag,
+                    AwayFlag = awayFlag,
+                    HomeSets = homeSets,
+                    AwaySets = awaySets,
+                    HomeGamePoints = homeGamePoints,
+                    AwayGamePoints = awayGamePoints,
+                    HomeService = homeService,
+                    AwayService = awayService,
+                    SetScores = setScores
                 };
             }
             catch { return null; }
@@ -526,15 +686,21 @@ namespace FlashscoreOverlay
             var hasScore = !string.IsNullOrWhiteSpace(md.HomeScore) || !string.IsNullOrWhiteSpace(md.AwayScore);
             var isLive = DetermineLiveState(md.Time, md.Stage);
 
-            // Blinking only when actively playing (minute contains ')
             var shouldBlink = (md.Time?.Contains("'") == true || md.Stage?.Contains("'") == true);
-
-            // Handle "Descanso" state: show as red label but no blinking
             var isDescanso = stage.ToLowerInvariant().Contains("descanso");
             var displayTimeLabel = isDescanso
                 ? "Descanso"
                 : (string.IsNullOrWhiteSpace(timeLabel) ? "\u2014" : timeLabel);
             var displayStageLabel = isDescanso ? string.Empty : stage;
+
+            var isTennisMatch = !string.IsNullOrWhiteSpace(md.HomeFlag) || !string.IsNullOrWhiteSpace(md.AwayFlag)
+                || (md.Url?.Contains("/tenis/") == true) || (md.Url?.Contains("/tennis/") == true)
+                || (md.SetScores != null && md.SetScores.Count > 0);
+            if (isTennisMatch && !string.IsNullOrWhiteSpace(stage))
+            {
+                displayTimeLabel = stage;
+                displayStageLabel = string.Empty;
+            }
 
             return new OverlayDisplayData
             {
@@ -556,7 +722,19 @@ namespace FlashscoreOverlay
                 HasScore = hasScore,
                 IsLive = isLive,
                 IsBlinking = shouldBlink && !isDescanso,
-                Url = md.Url
+                Url = md.Url,
+                Category = null, 
+                CompetitionTitle = null, 
+                
+                HomeFlag = md.HomeFlag,
+                AwayFlag = md.AwayFlag,
+                HomeSets = md.HomeSets,
+                AwaySets = md.AwaySets,
+                HomeGamePoints = md.HomeGamePoints,
+                AwayGamePoints = md.AwayGamePoints,
+                HomeService = md.HomeService,
+                AwayService = md.AwayService,
+                SetScores = md.SetScores
             };
         }
 
@@ -575,16 +753,14 @@ namespace FlashscoreOverlay
             var stage = (stageSource ?? "").Trim().ToLowerInvariant();
             var time = (timeSource ?? "").Trim().ToLowerInvariant();
 
-            // Explicit NOT live states
             if (stage.Contains("preview") || stage.Contains("finalizado") || stage.Contains("final") || stage.Contains("terminado")) return false;
             if (stage.Contains("penaltis") || stage.Contains("postergado") || stage.Contains("aplazado") || stage.Contains("cancelado")) return false;
 
-            // Explicit LIVE states (Descanso uses red style too as requested)
             if (stage.Contains("descanso") || stage.Contains("en directo") || stage.Contains("en curso") || stage.Contains("juego") || stage.Contains("gol")) return true;
             if (stage.Contains("parte") || stage.Contains("tiempo") || stage.Contains("prórroga") || stage.Contains("extra")) return true;
+            if (stage.Contains("set")) return true; 
             if (stage.Contains("'") || time.Contains("'")) return true;
 
-            // Heuristic for time: if starts with digit and NO colon/dot (distinguish from 15:00 or 15.05.)
             if (time.Length > 0 && char.IsDigit(time[0]) && !time.Contains(":") && !time.Contains(".")) return true;
 
             return false;
@@ -735,10 +911,10 @@ namespace FlashscoreOverlay
             margin: 2px 0;
         }}
 
-        .match-row--highlight {{
+        .match-row--highlight {
             box-shadow: 0 0 0 2px rgba(199, 0, 53, 0.8);
             z-index: 1;
-        }}
+        }
 
         .match-row:hover {{ background: var(--row-hover); }}
         .match-row:last-child {{ border-bottom: none; }}
@@ -752,22 +928,28 @@ namespace FlashscoreOverlay
 
         /* Time / Stage column */
         .event__time {{
-            font-size: 12px;
+            font-size: 11px;
             color: var(--text-time);
-            min-width: 46px;
+            width: 70px;
             font-weight: 500;
             letter-spacing: 0.02em;
             text-align: center;
             flex-shrink: 0;
+            white-space: normal;
+            word-break: break-word;
+            line-height: 1.3;
         }}
 
         .event__stage {{
             color: var(--color-primary);
             font-weight: 700;
-            font-size: 12px;
-            min-width: 46px;
+            font-size: 11px;
+            width: 70px;
             text-align: center;
             flex-shrink: 0;
+            white-space: normal;
+            word-break: break-word;
+            line-height: 1.3;
         }}
 
         .event__stage--block {{
@@ -791,7 +973,7 @@ namespace FlashscoreOverlay
             flex-grow: 1;
             gap: 4px;
             justify-content: center;
-            margin-left: 10px;
+            margin-left: 14px;
             min-width: 0;
         }}
 
@@ -801,7 +983,7 @@ namespace FlashscoreOverlay
             gap: 8px;
             position: relative;
             z-index: 2;
-            pointer-events: none;
+            cursor: pointer;
         }}
 
         .team-logo {{
@@ -811,7 +993,15 @@ namespace FlashscoreOverlay
             flex-shrink: 0;
             border-radius: 2px;
             cursor: pointer;
-            pointer-events: auto;
+        }}
+
+        .flag-icon {{
+            width: 18px;
+            height: 13px;
+            object-fit: cover;
+            flex-shrink: 0;
+            border-radius: 1px;
+            margin-right: 8px;
         }}
 
         .team-name {{
@@ -823,11 +1013,24 @@ namespace FlashscoreOverlay
             overflow: hidden;
             text-overflow: ellipsis;
             cursor: pointer;
-            pointer-events: auto;
             transition: color 0.15s ease;
         }}
 
-        /* Score column */
+        /* Tennis Service Indicator */
+        .service-icon {{
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 10px;
+            height: 10px;
+            margin-left: 4px;
+            flex-shrink: 0;
+            color: #8a8a9a;
+            font-size: 10px;
+            line-height: 1;
+        }}
+
+        /* Score column (standard football) */
         .score-col {{
             display: flex;
             flex-direction: column;
@@ -846,6 +1049,103 @@ namespace FlashscoreOverlay
             text-align: center;
         }}
 
+        /* === Tennis Score Grid === */
+        .tennis-row {{
+            display: flex;
+            align-items: center;
+            background: var(--row-bg);
+            border-bottom: 1px solid var(--border-row);
+            padding: 6px 14px;
+            position: relative;
+            text-decoration: none;
+            color: inherit;
+            transition: background 0.12s ease-out, box-shadow 0.2s ease;
+            min-height: 52px;
+            cursor: pointer;
+            border-radius: 8px;
+            margin: 2px 0;
+        }}
+        .tennis-row:hover {{ background: var(--row-hover); }}
+        .tennis-row:last-child {{ border-bottom: none; }}
+
+        .tennis-body {{
+            display: flex;
+            align-items: center;
+            flex: 1;
+            min-width: 0;
+        }}
+
+        .tennis-names {{
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            flex: 1;
+            min-width: 0;
+        }}
+
+        .tennis-player {{
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            min-width: 0;
+            position: relative;
+            z-index: 2;
+        }}
+
+        .tennis-player .team-name {{
+            flex: 1;
+            min-width: 0;
+        }}
+
+        .tennis-scores {{
+            display: flex;
+            align-items: stretch;
+            gap: 0;
+            margin-left: 8px;
+            flex-shrink: 0;
+            font-variant-numeric: tabular-nums;
+        }}
+
+        .tennis-score-col {{
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 3px;
+            min-width: 20px;
+            padding: 0 3px;
+        }}
+
+        .tennis-score-col.sets-won {{
+            color: var(--color-primary);
+            font-weight: 700;
+            min-width: 22px;
+            margin-right: 4px;
+        }}
+
+        .tennis-score-col.set-score {{
+            color: #b0b0b8;
+        }}
+
+        .tennis-score-col.game-points {{
+            color: var(--text-main);
+            min-width: 24px;
+            margin-left: 6px;
+            padding: 2px 4px;
+            background: rgba(255, 255, 255, 0.06);
+            border-radius: 3px;
+        }}
+
+        .sc-val {{
+            font-size: 12px;
+            text-align: center;
+            line-height: 1.3;
+        }}
+
+        .sc-val.bold {{
+            font-weight: 700;
+        }}
+
         .score-val.finished {{ color: var(--score-finished); }}
         .score-val.preview {{ color: transparent; }}
 
@@ -860,45 +1160,6 @@ namespace FlashscoreOverlay
             text-align: center;
         }}
 
-        /* Context menu */
-        .ctx-menu {{
-            display: none;
-            position: fixed;
-            z-index: 1000;
-            background: #252550;
-            border: 1px solid #3a3a6a;
-            border-radius: 6px;
-            box-shadow: 0 4px 16px rgba(0,0,0,0.5);
-            padding: 4px 0;
-            min-width: 160px;
-        }}
-
-        .ctx-menu.visible {{ display: block; }}
-
-        .ctx-menu-item {{
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 8px 14px;
-            font-size: 12px;
-            color: #e0e0e0;
-            cursor: pointer;
-            transition: background 0.1s;
-        }}
-
-        .ctx-menu-item:hover {{
-            background: rgba(255,255,255,0.08);
-        }}
-
-        .ctx-menu-item.danger {{ color: #ff4c6a; }}
-        .ctx-menu-item.danger:hover {{ background: rgba(255,76,106,0.12); }}
-
-        .ctx-menu-sep {{
-            height: 1px;
-            background: #3a3a6a;
-            margin: 4px 0;
-        }}
-
         /* Empty state */
         .empty-state {{
             padding: 30px 16px;
@@ -909,7 +1170,7 @@ namespace FlashscoreOverlay
             border-radius: 8px;
         }}
 
-        /* === Sport Header (ESTILO BASE PRESERVADO) === */
+        /* === Sport Header === */
         .sport-header {{
             display: flex;
             align-items: center;
@@ -963,7 +1224,7 @@ namespace FlashscoreOverlay
         const highlightedMatches = new Set({highlightedMatchesJson});
 
         function applyHighlights() {{
-            const rows = container.querySelectorAll('.match-row');
+            const rows = container.querySelectorAll('.match-row, .tennis-row');
             rows.forEach(row => {{
                 const matchId = row.getAttribute('data-id') || '';
                 if (matchId && highlightedMatches.has(matchId)) {{
@@ -980,23 +1241,20 @@ namespace FlashscoreOverlay
 
         // Single-click: prevent navigation on links
         document.addEventListener('click', (e) => {{
-
             const link = e.target.closest('a');
             if (link && link.href && !link.href.endsWith('#')) {{
                 e.preventDefault();
-                // Do NOT navigate on single click
             }}
         }});
 
         // Double-click: navigate
         document.addEventListener('dblclick', (e) => {{
-            // Check if user clicked directly on a team-name or team-logo element
             const clickedEl = e.target;
             const isTeamName = clickedEl.classList.contains('team-name');
-            const isTeamLogo = clickedEl.classList.contains('team-logo');
+            const isTeamLogo = clickedEl.classList.contains('team-logo') || clickedEl.classList.contains('flag-icon');
 
             if (isTeamName || isTeamLogo) {{
-                const teamItem = clickedEl.closest('.team-item');
+                const teamItem = clickedEl.closest('.team-item, .tennis-player');
                 if (teamItem) {{
                     e.preventDefault();
                     e.stopPropagation();
@@ -1004,10 +1262,8 @@ namespace FlashscoreOverlay
                     const teamHref = teamItem.getAttribute('data-team-href') || '';
                     const matchUrl = teamItem.getAttribute('data-match-url') || '';
                     if (teamHref) {{
-                        // Navigate directly to team href via fc_open_team
                         send('openTeam', {{ Name: teamName, Href: teamHref, MatchUrl: matchUrl }});
                     }} else if (teamName) {{
-                        // Fallback: search by name
                         send('openTeam', {{ Name: teamName, MatchUrl: matchUrl }});
                     }}
                     return;
@@ -1025,7 +1281,7 @@ namespace FlashscoreOverlay
         // Middle-click toggles border highlight for multiple matches
         document.addEventListener('auxclick', (e) => {{
             if (e.button !== 1) return;
-            const row = e.target.closest('.match-row');
+            const row = e.target.closest('.match-row, .tennis-row');
             if (!row) return;
             e.preventDefault();
             const matchId = row.getAttribute('data-id') || '';
@@ -1058,7 +1314,7 @@ namespace FlashscoreOverlay
                 return;
             }}
 
-            const row = e.target.closest('.match-row');
+            const row = e.target.closest('.match-row, .tennis-row');
             if (row) {{
                 e.preventDefault();
                 const matchId = row.getAttribute('data-id') || '';
@@ -1066,87 +1322,6 @@ namespace FlashscoreOverlay
             }}
         }});
 
-        function renderHeader(comp) {{
-            const url = comp.hrefWithParam || comp.href || '#';
-            const title = comp.title || 'Competición';
-            const category = comp.category || '';
-
-            // Build inline: CATEGORY: TITLE
-            let headerContent = '';
-            if (category) {{
-                headerContent = `<span class='headerLeague__category'>${{category}}</span><span class='headerLeague__separator'>:</span><a href='${{url}}' class='headerLeague__title'>${{title}}</a>`;
-            }} else {{
-                headerContent = `<a href='${{url}}' class='headerLeague__title'>${{title}}</a>`;
-            }}
-
-            return `
-            <header class='headerLeague'>
-                <div class='headerLeague__body'>
-                    <div class='headerLeague__titleWrapper'>
-                        ${{headerContent}}
-                    </div>
-                </div>
-            </header>`;
-        }}
-
-        function renderMatch(match) {{
-            const homeName = match.homeTeam || 'Local';
-            const awayName = match.awayTeam || 'Visitante';
-            const homeLogoSrc = match.homeLogo || placeholder;
-            const awayLogoSrc = match.awayLogo || placeholder;
-            const matchId = match.matchId || match.overlayId || '';
-            const matchUrl = match.url || '#';
-            const homeHref = match.homeHref || '';
-            const awayHref = match.awayHref || '';
-            const isLive = !!match.isLive;
-            const hasScore = !!match.hasScore;
-            const scoreClass = isLive ? 'score-val' : (hasScore ? 'score-val finished' : 'score-val preview');
-
-            const homeScoreText = match.homeScore || (hasScore ? '0' : '-');
-            const awayScoreText = match.awayScore || (hasScore ? '0' : '-');
-
-            // Build the time/stage column
-            let timeColHtml;
-            if (isLive) {{
-                let displayTime = match.timeLabel || '';
-                const isBlinking = !!match.isBlinking;
-                if (isBlinking) {{
-                    displayTime = displayTime.replace(/'/g, '').trim();
-                }}
-                const blinkHtml = isBlinking ? `<span class='blink'>'</span>` : '';
-                timeColHtml = `<div class='event__stage'><div class='event__stage--block'>${{displayTime}}${{blinkHtml}}</div></div>`;
-            }} else {{
-                let inner = match.timeLabel || '\u2014';
-                if (match.stageLabel) {{
-                    inner += `<div class='stage-label'>${{match.stageLabel}}</div>`;
-                }}
-                timeColHtml = `<div class='event__time'>${{inner}}</div>`;
-            }}
-
-            return `
-            <div class='match-row' data-id='${{matchId}}' data-url='${{matchUrl}}'>
-                <a href='${{matchUrl}}' class='row-link' aria-label='Ver partido'></a>
-                ${{timeColHtml}}
-                <div class='teams-container'>
-                    <div class='team-item' data-team-name='${{homeName}}' data-team-href='${{homeHref}}' data-match-url='${{matchUrl}}'>
-                        <img class='team-logo' src='${{homeLogoSrc}}' onerror=""this.onerror=null;this.src='${{placeholder}}'"" alt=''>
-                        <span class='team-name'>${{homeName}}</span>
-                        ${{match.homeRedCards > 0 ? `<span class='red-card-icon'></span>` : ''}}
-                    </div>
-                    <div class='team-item' data-team-name='${{awayName}}' data-team-href='${{awayHref}}' data-match-url='${{matchUrl}}'>
-                        <img class='team-logo' src='${{awayLogoSrc}}' onerror=""this.onerror=null;this.src='${{placeholder}}'"" alt=''>
-                        <span class='team-name'>${{awayName}}</span>
-                        ${{match.awayRedCards > 0 ? `<span class='red-card-icon'></span>` : ''}}
-                    </div>
-                </div>
-                <div class='score-col'>
-                    <span class='${{scoreClass}}'>${{homeScoreText}}</span>
-                    <span class='${{scoreClass}}'>${{awayScoreText}}</span>
-                </div>
-            </div>`;
-        }}
-
-        // LISTA DE EMOJIS BASE PRESERVADA EXACTAMENTE
         const SPORT_ICONS = {{
             'Fútbol': '⚽', 'Baloncesto': '🏀', 'Tenis': '🎾',
             'Hockey': '🏒', 'Hockey Hielo': '🏒', 'Balonmano': '🤾',
@@ -1193,6 +1368,173 @@ namespace FlashscoreOverlay
             return header.outerHTML;
         }}
 
+        function renderHeader(comp) {{
+            const url = comp.hrefWithParam || comp.href || '#';
+            const title = comp.title || 'Competición';
+            const category = comp.category || '';
+
+            let headerContent = '';
+            if (category) {{
+                headerContent = `<span class='headerLeague__category'>${{category}}</span><span class='headerLeague__separator'>:</span><a href='${{url}}' class='headerLeague__title'>${{title}}</a>`;
+            }} else {{
+                headerContent = `<a href='${{url}}' class='headerLeague__title'>${{title}}</a>`;
+            }}
+
+            return `
+            <header class='headerLeague'>
+                <div class='headerLeague__body'>
+                    <div class='headerLeague__titleWrapper'>
+                        ${{headerContent}}
+                    </div>
+                </div>
+            </header>`;
+        }}
+
+        function renderMatch(match) {{
+            const matchId = match.matchId || match.overlayId || '';
+            const matchUrl = match.url || '#';
+            const isLive = !!match.isLive;
+            
+            // --- Common Time Column ---
+            let timeColHtml;
+            if (isLive) {{
+                let displayTime = match.timeLabel || '';
+                const isBlinking = !!match.isBlinking;
+                if (isBlinking) {{
+                    displayTime = displayTime.replace(/'/g, '').trim();
+                }}
+                const blinkHtml = isBlinking ? `<span class='blink'>'</span>` : '';
+                timeColHtml = `<div class='event__stage'><div class='event__stage--block'>${{displayTime}}${{blinkHtml}}</div></div>`;
+            }} else {{
+                let inner = match.timeLabel || '\u2014';
+                if (match.stageLabel) {{
+                    inner += `<div class='stage-label'>${{match.stageLabel}}</div>`;
+                }}
+                timeColHtml = `<div class='event__time'>${{inner}}</div>`;
+            }}
+
+            // --- Detect Tennis Mode ---
+            const cat = (match.category || '').toUpperCase();
+            const title = (match.competitionTitle || '').toUpperCase();
+            const url = (match.url || '').toLowerCase();
+            
+            let isTennis = (!!match.homeFlag || !!match.awayFlag || !!match.homeSets || (match.setScores && match.setScores.length > 0));
+            if (!isTennis && (url.includes('/tenis/') || url.includes('/tennis/'))) isTennis = true;
+            
+            if (!isTennis) {{
+                if (cat.includes('ATP') || cat.includes('WTA') || cat.includes('CHALLENGER') || cat.includes('ITF') || 
+                    cat.includes('TENIS') || title.includes('TENIS')) {{
+                    isTennis = true;
+                }}
+            }}
+            
+            const homeName = match.homeTeam || 'Local';
+            const awayName = match.awayTeam || 'Visitante';
+            const homeHref = match.homeHref || '';
+            const awayHref = match.awayHref || '';
+            
+            if (isTennis) {{
+                const homeFlagSrc = match.homeFlag || placeholder;
+                const awayFlagSrc = match.awayFlag || placeholder;
+
+                let homeSetsVal = match.homeSets;
+                let awaySetsVal = match.awaySets;
+                if (!homeSetsVal && !awaySetsVal && (match.homeScore || match.awayScore)) {{
+                    homeSetsVal = match.homeScore || '0';
+                    awaySetsVal = match.awayScore || '0';
+                }}
+                homeSetsVal = homeSetsVal || '0';
+                awaySetsVal = awaySetsVal || '0';
+
+                const setScores = match.setScores || [];
+                const parsedSets = setScores.map(s => {{
+                    const parts = s.split(' ');
+                    return {{ h: parts[0] || '-', a: parts[1] || '-' }};
+                }});
+
+                const homePts = match.homeGamePoints || '';
+                const awayPts = match.awayGamePoints || '';
+                const hasGamePoints = (homePts !== '' && homePts !== '0') || (awayPts !== '' && awayPts !== '0') || (homePts === '0' && awayPts !== '') || (awayPts === '0' && homePts !== '');
+
+                const homeServiceHtml = match.homeService ? `<span class='service-icon'>⊕</span>` : '';
+                const awayServiceHtml = match.awayService ? `<span class='service-icon'>⊕</span>` : '';
+
+                let scoreColumnsHtml = '';
+                scoreColumnsHtml += `<div class='tennis-score-col sets-won'>
+                    <span class='sc-val bold'>${{homeSetsVal}}</span>
+                    <span class='sc-val bold'>${{awaySetsVal}}</span>
+                </div>`;
+
+                parsedSets.forEach(s => {{
+                    scoreColumnsHtml += `<div class='tennis-score-col set-score'>
+                        <span class='sc-val'>${{s.h}}</span>
+                        <span class='sc-val'>${{s.a}}</span>
+                    </div>`;
+                }});
+
+                if (isLive && hasGamePoints) {{
+                    scoreColumnsHtml += `<div class='tennis-score-col game-points'>
+                        <span class='sc-val bold'>${{homePts || '0'}}</span>
+                        <span class='sc-val bold'>${{awayPts || '0'}}</span>
+                    </div>`;
+                }}
+
+                return `
+            <div class='tennis-row' data-id='${{matchId}}' data-url='${{matchUrl}}'>
+                <a href='${{matchUrl}}' class='row-link' aria-label='Ver partido'></a>
+                ${{timeColHtml}}
+                <div class='tennis-body'>
+                    <div class='tennis-names'>
+                        <div class='tennis-player' data-team-name='${{homeName}}' data-team-href='${{homeHref}}' data-match-url='${{matchUrl}}'>
+                            <img class='flag-icon' src='${{homeFlagSrc}}' onerror=""this.onerror=null;this.src='${{placeholder}}'"" alt=''>
+                            <span class='team-name'>${{homeName}}</span>
+                            ${{homeServiceHtml}}
+                        </div>
+                        <div class='tennis-player' data-team-name='${{awayName}}' data-team-href='${{awayHref}}' data-match-url='${{matchUrl}}'>
+                            <img class='flag-icon' src='${{awayFlagSrc}}' onerror=""this.onerror=null;this.src='${{placeholder}}'"" alt=''>
+                            <span class='team-name'>${{awayName}}</span>
+                            ${{awayServiceHtml}}
+                        </div>
+                    </div>
+                    <div class='tennis-scores'>
+                        ${{scoreColumnsHtml}}
+                    </div>
+                </div>
+            </div>`;
+            }}
+            
+            // --- Fallback Standard Mode ---
+            const homeLogoSrc = match.homeLogo || placeholder;
+            const awayLogoSrc = match.awayLogo || placeholder;
+            const hasScore = !!match.hasScore;
+            const scoreClass = isLive ? 'score-val' : (hasScore ? 'score-val finished' : 'score-val preview');
+
+            const homeScoreText = match.homeScore || (hasScore ? '0' : '-');
+            const awayScoreText = match.awayScore || (hasScore ? '0' : '-');
+
+            return `
+            <div class='match-row' data-id='${{matchId}}' data-url='${{matchUrl}}'>
+                <a href='${{matchUrl}}' class='row-link' aria-label='Ver partido'></a>
+                ${{timeColHtml}}
+                <div class='teams-container'>
+                    <div class='team-item' data-team-name='${{homeName}}' data-team-href='${{homeHref}}' data-match-url='${{matchUrl}}'>
+                        <img class='team-logo' src='${{homeLogoSrc}}' onerror=""this.onerror=null;this.src='${{placeholder}}'"" alt=''>
+                        <span class='team-name'>${{homeName}}</span>
+                        ${{match.homeRedCards > 0 ? `<span class='red-card-icon'></span>` : ''}}
+                    </div>
+                    <div class='team-item' data-team-name='${{awayName}}' data-team-href='${{awayHref}}' data-match-url='${{matchUrl}}'>
+                        <img class='team-logo' src='${{awayLogoSrc}}' onerror=""this.onerror=null;this.src='${{placeholder}}'"" alt=''>
+                        <span class='team-name'>${{awayName}}</span>
+                        ${{match.awayRedCards > 0 ? `<span class='red-card-icon'></span>` : ''}}
+                    </div>
+                </div>
+                <div class='score-col'>
+                    <span class='${{scoreClass}}'>${{homeScoreText}}</span>
+                    <span class='${{scoreClass}}'>${{awayScoreText}}</span>
+                </div>
+            </div>`;
+        }
+
         function render(sportGroups) {{
             if (!sportGroups || sportGroups.length === 0) {{
                 container.innerHTML = `<div class='empty-state'>No hay partidos fijados.<br>Agrega partidos desde Flashscore.</div>`;
@@ -1205,12 +1547,10 @@ namespace FlashscoreOverlay
                 const sportName = sportGroup.sport || 'Otros';
                 const groups = sportGroup.groups || [];
 
-                // Sport header
                 const sportDiv = document.createElement('div');
                 sportDiv.innerHTML = renderSportHeader(sportGroup);
                 if (sportDiv.firstChild) container.appendChild(sportDiv.firstChild);
 
-                // Competition groups under this sport
                 groups.forEach(group => {{
                     const comp = group.competition;
                     if (!comp) return;
@@ -1298,6 +1638,27 @@ namespace FlashscoreOverlay
             public bool IsLive { get; set; }
             public bool IsBlinking { get; set; }
             public string? Url { get; set; }
+            public string? Category { get; set; } 
+            public string? CompetitionTitle { get; set; }
+            
+            // Tennis specific
+            public string? HomeFlag { get; set; }
+            public string? AwayFlag { get; set; }
+            public string? HomeSets { get; set; }
+            public string? AwaySets { get; set; }
+            public string? HomeGamePoints { get; set; }
+            public string? AwayGamePoints { get; set; }
+            public bool HomeService { get; set; }
+            public bool AwayService { get; set; }
+            public List<string>? SetScores { get; set; }
+        }
+
+        private string? EnsureAbsoluteUrl(string? url)
+        {
+            if (string.IsNullOrWhiteSpace(url)) return null;
+            if (url.StartsWith("//")) return "https:" + url;
+            if (url.StartsWith("/")) return "https://www.flashscore.es" + url;
+            return url;
         }
     }
 }

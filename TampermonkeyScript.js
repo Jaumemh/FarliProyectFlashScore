@@ -88,24 +88,18 @@
         if (!href) return href;
 
         // 1. Extract path part starting from /equipo/ or /team/
-        // This effectively strips any malformed domain prefixes like www.flashscore.es/www.flashscore.es
         const match = href.toString().match(/(\/(?:equipo|team)\/.*)/i);
-        if (!match) return href; // Return original if pattern not found
+        if (!match) return href; 
 
         let path = match[1];
 
         // 2. Fix multi-segment slugs: /equipo/part1/part2/ID -> /equipo/part1-part2/ID
-        // Heuristic: If we have 4+ segments (equipo/a/b/ID...), assume a/b should be a-b
         const segments = path.split('/').filter(p => p && !/flashscore/i.test(p));
-        // segments[0] is 'equipo' or 'team'
 
         if (segments.length >= 4) {
-            // Check if 4th segment looks like an ID (min 4 chars)
             const idCandidate = segments[3];
             if (idCandidate && idCandidate.length >= 4) {
                 const newSlug = `${segments[1]}-${segments[2]}`;
-                // Reconstruct path: /equipo/new-slug/id/suffix
-                // Use the rest of segments from index 3 onwards
                 const rest = segments.slice(3).join('/');
                 path = `/${segments[0]}/${newSlug}/${rest}`;
             }
@@ -135,19 +129,15 @@
             if (!k) return;
             const idx = loadTeamIndex();
             let full;
-            // Handle absolute URLs
             if (href.startsWith('http://') || href.startsWith('https://')) {
                 full = href;
             }
-            // Handle URLs that already have the domain without protocol
             else if (href.startsWith('www.flashscore.es')) {
                 full = 'https://' + href;
             }
-            // Handle protocol-relative URLs
             else if (href.startsWith('//')) {
                 full = 'https:' + href;
             }
-            // Handle path-relative URLs
             else {
                 full = 'https://www.flashscore.es' + (href.startsWith('/') ? href : '/' + href);
             }
@@ -168,19 +158,15 @@
                     const t = (a.textContent || '').trim();
                     if (t) {
                         let fullHref;
-                        // Handle absolute URLs
                         if (h.startsWith('http://') || h.startsWith('https://')) {
                             fullHref = h;
                         }
-                        // Handle URLs that already have the domain without protocol
                         else if (h.startsWith('www.flashscore.es')) {
                             fullHref = 'https://' + h;
                         }
-                        // Handle protocol-relative URLs
                         else if (h.startsWith('//')) {
                             fullHref = 'https:' + h;
                         }
-                        // Handle path-relative URLs
                         else {
                             fullHref = 'https://www.flashscore.es' + (h.startsWith('/') ? h : '/' + h);
                         }
@@ -222,18 +208,15 @@
             if (!resp.ok) return;
             const json = await resp.json();
             if (json && json.action === 'navigate' && json.href) {
-                // clear flag and navigate in this same tab
                 try { sessionStorage.removeItem('fc_open_tab'); sessionStorage.removeItem('fc_open_href'); } catch { }
                 window.location.href = json.href;
             } else if (json && json.action === 'removeMatch' && json.matchId) {
-                // Handle remote removal of match from overlay (e.g., right-click removal)
                 handleRemoteRemoveMatch(json.matchId);
             } else if (json && json.action === 'removeMatches' && Array.isArray(json.matchIds)) {
                 json.matchIds.forEach(id => {
                     if (id) handleRemoteRemoveMatch(id);
                 });
             } else if (json && json.action === 'removeAllMatches') {
-                // Handle remote removal of ALL matches (e.g., overlay X button)
                 handleRemoteRemoveAllMatches();
             }
         } catch (e) {
@@ -242,7 +225,6 @@
     }
 
     function handleRemoteRemoveMatch(matchId) {
-        // Find the match element and update the button if it exists in the DOM
         const matchEl = document.getElementById(matchId);
         if (matchEl) {
             const btn = matchEl.querySelector('.fc-overlay-btn');
@@ -250,15 +232,11 @@
                 btn.classList.remove('active');
             }
         }
-
-        // Always remove from tracked matches and stop live tracking,
-        // even if the element is not in the current DOM
         untrackMatch(matchId);
         stopLiveTracking(matchId);
     }
 
     function handleRemoteRemoveAllMatches() {
-        // Get all currently tracked matches and remove each one
         const tracked = loadTrackedMatches();
         tracked.forEach(matchId => {
             const matchEl = document.getElementById(matchId);
@@ -270,7 +248,6 @@
             }
             stopLiveTracking(matchId);
         });
-        // Clear all tracked matches at once
         saveTrackedMatches([]);
     }
 
@@ -303,7 +280,6 @@
         }
     }
 
-    // Extract potential team page hrefs for home/away from a match element
     function getTeamHref(matchElement, participantSelector) {
         try {
             const anchor = matchElement.querySelector(participantSelector + ' a[href], ' + participantSelector + ' [href]');
@@ -311,19 +287,15 @@
                 let h = anchor.getAttribute('href');
                 if (h) {
                     let full;
-                    // Handle absolute URLs
                     if (h.startsWith('http://') || h.startsWith('https://')) {
                         full = h;
                     }
-                    // Handle URLs that already have the domain without protocol
                     else if (h.startsWith('www.flashscore.es')) {
                         full = 'https://' + h;
                     }
-                    // Handle protocol-relative URLs
                     else if (h.startsWith('//')) {
                         full = 'https:' + h;
                     }
-                    // Handle path-relative URLs
                     else {
                         full = 'https://www.flashscore.es' + (h.startsWith('/') ? h : '/' + h);
                     }
@@ -335,19 +307,15 @@
                 let h = a.getAttribute('href');
                 if (/\/equipo\//i.test(h) || /\/team\//i.test(h)) {
                     let full;
-                    // Handle absolute URLs
                     if (h.startsWith('http://') || h.startsWith('https://')) {
                         full = h;
                     }
-                    // Handle URLs that already have the domain without protocol
                     else if (h.startsWith('www.flashscore.es')) {
                         full = 'https://' + h;
                     }
-                    // Handle protocol-relative URLs
                     else if (h.startsWith('//')) {
                         full = 'https:' + h;
                     }
-                    // Handle path-relative URLs
                     else {
                         full = 'https://www.flashscore.es' + (h.startsWith('/') ? h : '/' + h);
                     }
@@ -360,10 +328,10 @@
         return '';
     }
 
-    // ========= LIVE UPDATE ENGINE (minutes/goals/cards by team) =========
-    const liveState = new Map();       // matchId -> snapshot
-    const liveObservers = new Map();   // matchId -> MutationObserver
-    const liveScheduled = new Map();   // matchId -> timeoutId
+    // ========= LIVE UPDATE ENGINE =========
+    const liveState = new Map();
+    const liveObservers = new Map();
+    const liveScheduled = new Map();
 
     function toIntScore(x) {
         const n = parseInt((x || '').toString().replace(/[^\d]/g, ''), 10);
@@ -371,7 +339,6 @@
     }
 
     function getTimeText(matchEl) {
-        // Prefer event__time, fallback to stage (incluye 45+2', etc.)
         const t1 = (matchEl.querySelector('.event__time')?.textContent || '').trim();
         if (t1) return t1;
         const stage = (matchEl.querySelector('.event__stage')?.textContent || '').trim();
@@ -388,7 +355,7 @@
         const homeScoreTxt = (matchEl.querySelector('.event__score--home')?.textContent || '').trim();
         const awayScoreTxt = (matchEl.querySelector('.event__score--away')?.textContent || '').trim();
 
-        // Tarjetas: en lista suele haber rojas (icon--redCard). Amarillas a veces no aparecen; lo intentamos por si acaso.
+        // Tarjetas
         const homeRed = countIcons(matchEl, [
             '.event__participant--home .icon--redCard',
             '.event__participant--home [class*="redCard"]'
@@ -409,6 +376,12 @@
             '.event__participant--away [class*="y-card"]'
         ]);
 
+        // Tennis-specific
+        const homeParts = Array.from(matchEl.querySelectorAll('.event__part--home, [class*="part--home"]')).map(e => e.textContent?.trim() || '');
+        const awayParts = Array.from(matchEl.querySelectorAll('.event__part--away, [class*="part--away"]')).map(e => e.textContent?.trim() || '');
+        const hasServeHome = !!matchEl.querySelector('.icon--serveHome, [class*="serveHome"]');
+        const hasServeAway = !!matchEl.querySelector('.icon--serveAway, [class*="serveAway"]');
+
         return {
             time: getTimeText(matchEl),
             homeScore: toIntScore(homeScoreTxt),
@@ -416,14 +389,17 @@
             homeRed,
             awayRed,
             homeYellow,
-            awayYellow
+            awayYellow,
+            homeParts: homeParts.join(','),
+            awayParts: awayParts.join(','),
+            serveHome: hasServeHome,
+            serveAway: hasServeAway
         };
     }
 
     function computeIncidents(prev, curr) {
         const inc = [];
 
-        // GOALS (por delta de marcador)
         if (prev && curr && prev.homeScore != null && curr.homeScore != null && curr.homeScore > prev.homeScore) {
             inc.push({ type: 'goal', team: 'home', delta: curr.homeScore - prev.homeScore, at: curr.time || '' });
         }
@@ -431,7 +407,6 @@
             inc.push({ type: 'goal', team: 'away', delta: curr.awayScore - prev.awayScore, at: curr.time || '' });
         }
 
-        // CARDS (por delta de contadores)
         if (prev && curr && curr.homeRed > prev.homeRed) {
             inc.push({ type: 'redCard', team: 'home', delta: curr.homeRed - prev.homeRed, at: curr.time || '' });
         }
@@ -451,8 +426,6 @@
 
     function sendLiveUpdate(matchEl, matchId, incidents = []) {
         const matchData = getMatchData(matchEl);
-
-        // Importante: fuerza el tiempo desde snapshot (más consistente para “minutos”)
         const snap = snapshot(matchEl);
         matchData.time = snap.time;
 
@@ -462,8 +435,6 @@
         if (!body) return;
 
         const compData = getCompetitionData(body);
-
-        // upsert en tu host (evita duplicados)
         sendToApp('updateMatch', { match: matchData, competition: compData, incidents });
     }
 
@@ -478,7 +449,6 @@
             const prev = liveState.get(matchId) || null;
             const curr = snapshot(el);
 
-            // Si no hay cambios, no enviamos
             const changed =
                 !prev ||
                 prev.time !== curr.time ||
@@ -487,7 +457,11 @@
                 prev.homeRed !== curr.homeRed ||
                 prev.awayRed !== curr.awayRed ||
                 prev.homeYellow !== curr.homeYellow ||
-                prev.awayYellow !== curr.awayYellow;
+                prev.awayYellow !== curr.awayYellow ||
+                prev.homeParts !== curr.homeParts ||
+                prev.awayParts !== curr.awayParts ||
+                prev.serveHome !== curr.serveHome ||
+                prev.serveAway !== curr.serveAway;
 
             if (!changed) return;
 
@@ -503,11 +477,10 @@
         const matchId = typeof matchElOrId === 'string' ? matchElOrId : (matchElOrId?.id || '');
         if (!matchId) return;
 
-        // Estado inicial
         const el = typeof matchElOrId === 'string' ? document.getElementById(matchId) : matchElOrId;
         if (el) {
             liveState.set(matchId, snapshot(el));
-            sendLiveUpdate(el, matchId, []); // snapshot inicial
+            sendLiveUpdate(el, matchId, []); 
         }
 
         if (liveObservers.has(matchId)) return;
@@ -541,24 +514,120 @@
             }
         }
 
-        // Blinking detection
         const stageEl = matchElement.querySelector('.event__stage');
         let stageText = stageEl?.textContent?.trim() || '';
         if (stageEl && stageEl.querySelector('.blink')) {
             if (!stageText.includes("'")) stageText += "'";
         }
 
-
-        // Clonar el elemento para capturar el HTML
         const clonedElement = matchElement.cloneNode(true);
-        // Remover el botón de overlay del HTML clonado
         const overlayBtn = clonedElement.querySelector('.fc-overlay-btn');
         if (overlayBtn) overlayBtn.remove();
 
-        // Obtener HTML limpio
         const matchHtml = clonedElement.outerHTML;
         const matchId = getMatchIdentifier(matchElement);
         const matchMid = extractMatchMid(matchUrl);
+
+        // Extract flags
+        const extractFlag = (side) => {
+            const getBgUrl = (el) => {
+                if (!el) return null;
+                const cls = el.getAttribute ? el.getAttribute('class') : null;
+                if (!cls || typeof cls !== 'string') return null;
+                if (!/\bfl_\d+\b/.test(cls) && !/\bflag\b/.test(cls)) return null;
+                try {
+                    const bg = getComputedStyle(el).backgroundImage;
+                    if (bg && bg !== 'none') {
+                        const m = bg.match(/url\(["']?([^"')]+)["']?\)/);
+                        if (m && m[1]) return m[1];
+                    }
+                } catch (e) { /* ignore */ }
+                return null;
+            };
+            
+            const logoSels = [
+                `.event__logo--${side}`,
+                `[class*="logo--${side}"]`
+            ];
+            for (const sel of logoSels) {
+                const el = matchElement.querySelector(sel);
+                const url = getBgUrl(el);
+                if (url) return url;
+                if (el) {
+                    const img = el.tagName === 'IMG' ? el : el.querySelector('img');
+                    if (img && img.src && img.src.startsWith('http')) return img.src;
+                }
+            }
+            
+            const parentSels = [
+                `.event__participant--${side}`,
+                `[class*="participant--${side}"]`
+            ];
+            for (const sel of parentSels) {
+                const parent = matchElement.querySelector(sel);
+                if (!parent) continue;
+                const url = getBgUrl(parent);
+                if (url) return url;
+                const children = parent.querySelectorAll('*');
+                for (const child of children) {
+                    const childUrl = getBgUrl(child);
+                    if (childUrl) return childUrl;
+                }
+            }
+            
+            const all = matchElement.querySelectorAll('[class*="fl_"], [class*="flag"]');
+            const flagUrls = [];
+            for (const el of all) {
+                const url = getBgUrl(el);
+                if (url) flagUrls.push(url);
+            }
+            const uniqueFlags = [...new Set(flagUrls)];
+            const idx = side === 'home' ? 0 : 1;
+            if (uniqueFlags.length > idx) return uniqueFlags[idx];
+            
+            return '';
+        };
+
+        const homeFlag = extractFlag('home');
+        const awayFlag = extractFlag('away');
+
+        const homeService = !!matchElement.querySelector('.icon--serveHome, [class*="icon--serve"][class*="Home"], [class*="serveHome"]');
+        const awayService = !!matchElement.querySelector('.icon--serveAway, [class*="icon--serve"][class*="Away"], [class*="serveAway"]');
+
+        let hp = Array.from(matchElement.querySelectorAll('.event__part--home'));
+        let ap = Array.from(matchElement.querySelectorAll('.event__part--away'));
+        
+        if (hp.length === 0) hp = Array.from(matchElement.querySelectorAll('[class*="part--home"]'));
+        if (ap.length === 0) ap = Array.from(matchElement.querySelectorAll('[class*="part--away"]'));
+        
+        if (hp.length === 0 && ap.length === 0) {
+            const allParts = Array.from(matchElement.querySelectorAll('[class*="score__part"]'));
+            if (allParts.length >= 2) {
+                for (let i = 0; i < allParts.length; i++) {
+                    if (i % 2 === 0) hp.push(allParts[i]);
+                    else ap.push(allParts[i]);
+                }
+            }
+        }
+        
+        const count = Math.min(hp.length, ap.length);
+        const setScores = [];
+        let homeGamePoints = '';
+        let awayGamePoints = '';
+
+        const isPoint = (v) => ['0','15','30','40','A','Ad'].includes(v);
+
+        for (let i = 0; i < count; i++) {
+            const h = (hp[i].textContent || '').trim();
+            const a = (ap[i].textContent || '').trim();
+            
+            if (i === count - 1 && (isPoint(h) || isPoint(a))) {
+                homeGamePoints = h;
+                awayGamePoints = a;
+            } else {
+                setScores.push(`${h} ${a}`);
+            }
+        }
 
         return {
             matchId,
@@ -576,6 +645,10 @@
             stage: stageText,
             homeLogo: matchElement.querySelector('img[alt]')?.src || '',
             awayLogo: matchElement.querySelectorAll('img[alt]')[1]?.src || '',
+            homeFlag, awayFlag,
+            homeService, awayService,
+            setScores,
+            homeGamePoints, awayGamePoints,
             url: matchUrl,
             homeHref: getTeamHref(matchElement, '.event__participant--home'),
             awayHref: getTeamHref(matchElement, '.event__participant--away'),
@@ -635,7 +708,6 @@
         const anchor = headerBody.querySelector('a[href]');
         let href = anchor ? anchor.getAttribute('href') : '';
         if (href && !href.startsWith('http')) href = `https://www.flashscore.es${href}`;
-        // build a href that can signal the page to open the clasificación tab
         let hrefWithParam = href || '';
         try {
             if (hrefWithParam) {
@@ -643,9 +715,7 @@
                 u.searchParams.set('fc_open_tab', 'classification');
                 hrefWithParam = u.toString();
             }
-        } catch (e) {
-            // ignore
-        }
+        } catch (e) { }
 
         const sport = extractSportFromHref(href);
 
@@ -716,7 +786,7 @@
                         competition: competitionData
                     });
                     btn.classList.remove('active');
-                    untrackMatch(matchData.matchId); // UNTRACK IT
+                    untrackMatch(matchData.matchId); 
                     stopLiveTracking(matchData.matchId);
                 } catch (error) {
                     console.error('No se pudo eliminar el overlay:', error);
@@ -729,9 +799,8 @@
                         competition: competitionData
                     });
                     btn.classList.add('active');
-                    trackMatch(matchData.matchId); // TRACK IT
+                    trackMatch(matchData.matchId); 
                     startLiveTracking(matchElement);
-                    // Index team hrefs from this match
                     try { if (matchData.homeTeam && matchData.homeHref) indexTeam(matchData.homeTeam, matchData.homeHref); } catch (e) { }
                     try { if (matchData.awayTeam && matchData.awayHref) indexTeam(matchData.awayTeam, matchData.awayHref); } catch (e) { }
                 } catch (error) {
@@ -744,7 +813,6 @@
         matchElement.style.position = 'relative';
         matchElement.appendChild(btn);
 
-        // Check initial state
         const mid = getMatchIdentifier(matchElement);
         const tracked = loadTrackedMatches();
         if (tracked.includes(mid)) {
@@ -763,10 +831,6 @@
 
     // ===== RIGHT-CLICK ON SPORT HEADER: REMOVE ALL MATCHES OF THAT SPORT =====
 
-    /**
-     * Extract the sport name from a headerLeague__wrapper element.
-     * Uses the href of the competition link to determine the sport via SPORT_SLUG_MAP.
-     */
     function extractSportFromHeader(headerWrapper) {
         const body = headerWrapper.querySelector('.headerLeague__body');
         if (!body) return '';
@@ -776,11 +840,6 @@
         return extractSportFromHref(href);
     }
 
-    /**
-     * Send a removeSport action to the C# app, which will remove ALL matches
-     * of that sport from the overlay and send removal commands back to browser tabs.
-     * Also clean up any locally visible matches in the DOM.
-     */
     async function removeAllMatchesForSport(headerWrapper) {
         const sport = extractSportFromHeader(headerWrapper);
         if (!sport) {
@@ -788,18 +847,14 @@
             return;
         }
 
-        // Visual feedback
         headerWrapper.classList.add('fc-removing');
 
         try {
-            // Tell the C# app to remove all matches of this sport
             await sendToApp('removeSport', { sport: sport });
         } catch (err) {
             console.error('Error sending removeSport to app:', err);
         }
 
-        // Also clean up locally visible matches in the DOM that belong to this sport
-        // Walk siblings to find matches under this header
         let sibling = headerWrapper.nextElementSibling;
         while (sibling) {
             if (sibling.classList && sibling.classList.contains('headerLeague__wrapper')) break;
@@ -820,13 +875,9 @@
             sibling = sibling.nextElementSibling;
         }
 
-        // Remove visual feedback
         setTimeout(() => headerWrapper.classList.remove('fc-removing'), 500);
     }
 
-    /**
-     * Attach right-click (contextmenu) listener on all headerLeague__wrapper elements.
-     */
     function attachHeaderRightClickListeners() {
         const headers = document.querySelectorAll('.headerLeague__wrapper:not(.fc-rightclick-bound)');
         headers.forEach(header => {
@@ -853,7 +904,6 @@
 
     function tryOpenClassificationTabOnPage() {
         try {
-            // Check sessionStorage flag OR URL query param
             const urlParams = new URLSearchParams(window.location.search);
             const param = urlParams.get('fc_open_tab');
             const desired = sessionStorage.getItem('fc_open_tab') || param;
@@ -866,7 +916,6 @@
                     candidates[0].click();
                     sessionStorage.removeItem('fc_open_tab');
                     sessionStorage.removeItem('fc_open_href');
-                    // remove fc_open_tab from URL if present
                     try {
                         if (param) {
                             urlParams.delete('fc_open_tab');
@@ -937,7 +986,6 @@
             const clickTeamOnce = () => {
                 const tn = normalize(teamName);
 
-                // FIRST: Try team index for direct navigation
                 const idx = loadTeamIndex();
                 const k = normalizeKey(teamName);
                 if (idx && idx[k]) {
@@ -950,7 +998,6 @@
                     } catch (e) { }
                 }
 
-                // SECOND: Try saved href if it's a team href
                 const savedHref = sessionStorage.getItem('fc_open_href') || urlParams.get('fc_open_href') || '';
                 if (savedHref && /\/equipo\//i.test(savedHref)) {
                     try {
@@ -961,7 +1008,6 @@
                     } catch (e) { }
                 }
 
-                // THIRD: Find anchors with /equipo/ that match team name
                 const anchors = Array.from(document.querySelectorAll('a[href]'))
                     .filter(a => /\/equipo\//i.test(a.getAttribute('href')) || /\/team\//i.test(a.getAttribute('href')));
 
@@ -1021,10 +1067,8 @@
             }
         });
         if (shouldCheckMatches) setTimeout(addButtonsToAllMatches, 100);
-        // Update team index when DOM changes
         try { scanAndIndexTeams(); } catch (e) { }
         handleExpandableSections();
-        // Attach right-click listeners on any new headers
         attachHeaderRightClickListeners();
     });
 
@@ -1034,15 +1078,10 @@
         attachHeaderRightClickListeners();
         observer.observe(document.body, { childList: true, subtree: true });
 
-        // Ping al servidor para verificar conexión
         sendToApp('ping', { message: 'Script cargado' });
-        // Intentar abrir una ficha de equipo si se solicitó desde la app (prioritario)
         tryOpenTeamFromParam();
-        // Intentar abrir la pestaña clasificación si venimos de una navegación desde la lista
         tryOpenClassificationTabOnPage();
-        // Start polling for commands from the native app (e.g., navigate in current tab)
         startPollingCommands();
-        // Initial scan of team links and periodic rescans
         try { scanAndIndexTeams(); } catch (e) { }
         setInterval(() => { try { scanAndIndexTeams(); } catch (e) { } }, 5000);
     }
