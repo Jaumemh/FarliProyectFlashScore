@@ -801,7 +801,7 @@ namespace FlashscoreOverlay
             gap: 8px;
             position: relative;
             z-index: 2;
-            cursor: pointer;
+            pointer-events: none;
         }}
 
         .team-logo {{
@@ -811,6 +811,7 @@ namespace FlashscoreOverlay
             flex-shrink: 0;
             border-radius: 2px;
             cursor: pointer;
+            pointer-events: auto;
         }}
 
         .team-name {{
@@ -822,6 +823,7 @@ namespace FlashscoreOverlay
             overflow: hidden;
             text-overflow: ellipsis;
             cursor: pointer;
+            pointer-events: auto;
             transition: color 0.15s ease;
         }}
 
@@ -988,22 +990,28 @@ namespace FlashscoreOverlay
 
         // Double-click: navigate
         document.addEventListener('dblclick', (e) => {{
-            // Check if a team-item was clicked (team name or logo)
-            const teamItem = e.target.closest('.team-item');
-            if (teamItem) {{
-                e.preventDefault();
-                e.stopPropagation();
-                const teamName = teamItem.getAttribute('data-team-name') || '';
-                const teamHref = teamItem.getAttribute('data-team-href') || '';
-                const matchUrl = teamItem.getAttribute('data-match-url') || '';
-                if (teamHref) {{
-                    // Navigate directly to team href via fc_open_team
-                    send('openTeam', {{ Name: teamName, Href: teamHref, MatchUrl: matchUrl }});
-                }} else if (teamName) {{
-                    // Fallback: search by name
-                    send('openTeam', {{ Name: teamName, MatchUrl: matchUrl }});
+            // Check if user clicked directly on a team-name or team-logo element
+            const clickedEl = e.target;
+            const isTeamName = clickedEl.classList.contains('team-name');
+            const isTeamLogo = clickedEl.classList.contains('team-logo');
+
+            if (isTeamName || isTeamLogo) {{
+                const teamItem = clickedEl.closest('.team-item');
+                if (teamItem) {{
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const teamName = teamItem.getAttribute('data-team-name') || '';
+                    const teamHref = teamItem.getAttribute('data-team-href') || '';
+                    const matchUrl = teamItem.getAttribute('data-match-url') || '';
+                    if (teamHref) {{
+                        // Navigate directly to team href via fc_open_team
+                        send('openTeam', {{ Name: teamName, Href: teamHref, MatchUrl: matchUrl }});
+                    }} else if (teamName) {{
+                        // Fallback: search by name
+                        send('openTeam', {{ Name: teamName, MatchUrl: matchUrl }});
+                    }}
+                    return;
                 }}
-                return;
             }}
 
             const link = e.target.closest('a');
