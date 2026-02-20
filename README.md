@@ -1,6 +1,6 @@
 # FarliProyectFlashScore
 
-Proyecto Flash Score desarrollado colaborativamente por el equipo Mr Coca, Ivan y Fa.
+Proyecto Flash Score desarrollado colaborativamente por el equipo Ivan y sus compartidos.
 
 ## 📋 Descripción
 
@@ -44,3 +44,4 @@ cp .env.example .env
 
 # Ejecutar la aplicación
 [comando de ejecución]
+
