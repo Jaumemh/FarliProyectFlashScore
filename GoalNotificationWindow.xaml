@@ -1,0 +1,19 @@
+<Window x:Class="FlashscoreOverlay.GoalNotificationWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="Goal Notification"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        Width="480"
+        Height="180"
+        ResizeMode="NoResize"
+        Loaded="Window_Loaded">
+    <Border CornerRadius="6" Background="#FF1f1f1f" BorderBrush="#FF333333" BorderThickness="1"
+            Effect="{x:Null}">
+        <wv2:WebView2 x:Name="NotifWebView" DefaultBackgroundColor="Transparent" />
+    </Border>
+</Window>
