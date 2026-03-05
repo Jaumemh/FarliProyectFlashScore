@@ -521,12 +521,13 @@ namespace FlashscoreOverlay
                         if (ev.Type == "goal" || ev.Type == "penaltyGoal" || ev.Type == "ownGoal")
                         {
                             currentGoalCount++;
-                            latestGoal = ev; // Track the latest goal
+                            // Capture the FIRST goal encountered in list (Flashscore puts latest at top)
+                            if (latestGoal == null) latestGoal = ev; 
                         }
                         if (ev.Type == "redCard" || ev.Type == "yellowCard")
                         {
                             currentCardCount++;
-                            latestCard = ev;
+                            if (latestCard == null) latestCard = ev;
                         }
                         if (ev.Type == "redCard")
                         {
@@ -630,12 +631,12 @@ namespace FlashscoreOverlay
                         _pendingGoals.Remove(matchId);
                         Debug.WriteLine($"[OverlayWindow] Player name arrived for pending goal on {matchId}. Triggering popup.");
                     }
-                    else if ((DateTime.Now - pending.DetectedAt).TotalSeconds >= 60)
+                    else if ((DateTime.Now - pending.DetectedAt).TotalSeconds >= 180)
                     {
                         // Timeout reached, show popup anyway
                         triggerGoalNotification = true;
                         _pendingGoals.Remove(matchId);
-                        Debug.WriteLine($"[OverlayWindow] 60s timeout reached for pending goal on {matchId}. Showing popup without name.");
+                        Debug.WriteLine($"[OverlayWindow] 180s timeout reached for pending goal on {matchId}. Showing popup without name.");
                     }
                 }
 
