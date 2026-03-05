@@ -232,13 +232,13 @@ namespace FlashscoreOverlay
                                     const minuteEl = row.querySelector('.smv__timeBox');
                                     const eventMinute = minuteEl ? minuteEl.textContent.trim() : '';
 
-                                    // Detect event type by icon classes
+                                    // Detect event type by icon classes (escaped quotes for verbatim string)
                                     let eventType = '';
                                     if (incident.querySelector('.yellowCard-ico')) eventType = 'yellowCard';
-                                    else if (incident.querySelector('.redCard-ico')) eventType = 'redCard';
+                                    else if (incident.querySelector('.redCard-ico, .yellowRedCard-ico')) eventType = 'redCard';
                                     else if (incident.querySelector('.substitution-ico, .smv__subDown')) eventType = 'substitution';
-                                    else if (incident.querySelector('[class*=""footballGoal""], [class*=""Goal""]')) eventType = 'goal';
-                                    else if (incident.querySelector('.smv__incidentGoalScore, [class*=""goalScore""]')) eventType = 'goal';
+                                    else if (incident.querySelector('[class*=""footballGoal""], [class*=""Goal""], .smv__incidentGoalScore, .smv__incidentHomeScore, .smv__incidentAwayScore')) eventType = 'goal';
+                                    else if (incident.querySelector('.penaltyGoal-ico, .ownGoal-ico')) eventType = 'goal';
 
                                     if (!eventType) {
                                         const scoreInc = incident.querySelector('[class*=""Score""]');
@@ -255,7 +255,7 @@ namespace FlashscoreOverlay
                                     const playerLink = row.querySelector('a[href*=""/jugador/""], a[href*=""/player/""]');
                                     if (playerLink) {
                                         const href = playerLink.getAttribute('href') || '';
-                                        playerUrl = href.StartsWith('http') ? href : 'https://www.flashscore.es' + href;
+                                        playerUrl = href.startsWith('http') ? href : 'https://www.flashscore.es' + href;
                                     }
 
                                     let incidentDescription = '';
@@ -263,6 +263,11 @@ namespace FlashscoreOverlay
                                         const descEl = incident.querySelector('.smv__incidentSubObj');
                                         if (descEl) {
                                             incidentDescription = descEl.textContent.trim().replace(/^[\(\[]|[\)\]]$/g, ''); 
+                                        }
+                                    } else if (eventType === 'goal') {
+                                        const assistEl = row.querySelector('.smv__assist');
+                                        if (assistEl) {
+                                            incidentDescription = 'Asist: ' + assistEl.textContent.trim().replace(/^[\(\[]|[\)\]]$/g, '');
                                         }
                                     }
 

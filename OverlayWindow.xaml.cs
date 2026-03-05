@@ -534,13 +534,14 @@ namespace FlashscoreOverlay
                         if (ev.Type == "goal" || ev.Type == "penaltyGoal" || ev.Type == "ownGoal")
                         {
                             currentGoalCount++;
-                            // Capture the FIRST goal encountered in list (Flashscore puts latest at top)
-                            if (latestGoal == null) latestGoal = ev; 
+                            // Capture the LAST goal encountered (Flashscore lists them chronologically, latest at bottom)
+                            latestGoal = ev; 
                         }
                         if (ev.Type == "redCard" || ev.Type == "yellowCard")
                         {
                             currentCardCount++;
-                            if (latestCard == null) latestCard = ev;
+                            // Capture the LAST card (latest in cronology)
+                            latestCard = ev;
                         }
                         if (ev.Type == "redCard")
                         {
