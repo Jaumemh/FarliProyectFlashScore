@@ -491,7 +491,20 @@ namespace FlashscoreOverlay
 
                 // Update stage/time if available
                 if (!string.IsNullOrWhiteSpace(detailData.Stage))
-                    match.Stage = detailData.Stage;
+                {
+                    var oldStage = match.Stage ?? "";
+                    var newStage = detailData.Stage;
+                    
+                    match.Stage = newStage;
+
+                    // If status changes to finished, force a re-render
+                    if (!oldStage.ToLowerInvariant().Contains("finalizado") && 
+                        (newStage.ToLowerInvariant().Contains("finalizado") || newStage.ToLowerInvariant().Contains("final") || newStage.ToLowerInvariant().Contains("terminado")))
+                    {
+                        Debug.WriteLine($"[OverlayWindow] Match {matchId} status changed to Finished. Forcing refresh.");
+                        RenderOverlay();
+                    }
+                }
 
                 // Update league flag URL in CompetitionData (only set once, flag never changes)
                 if (!string.IsNullOrWhiteSpace(detailData.LeagueFlagUrl))
@@ -1241,6 +1254,11 @@ namespace FlashscoreOverlay
             display: inline;
         }}
 
+        .status-finished {{
+            color: var(--text-secondary) !important;
+            font-weight: 400 !important;
+        }}
+
         .red-card-icon {{
             display: inline-block;
             width: 8px;
@@ -1691,7 +1709,7 @@ namespace FlashscoreOverlay
 
             let flagHtml = '';
             if (flagUrl) {{
-                flagHtml = `<img src='${{flagUrl}}' class='headerLeague__flag' alt='Flag' style='max-width:24px; max-height:14px; width:auto; height:auto; margin-right:8px; vertical-align:middle; border-radius:1px; object-fit:contain;'>`;
+                flagHtml = `<img src='${{flagUrl}}' class='headerLeague__flag' alt='Flag' style='width:18px; height:10px; margin-right:8px; vertical-align:middle; border-radius:1px; object-fit:contain;'>`;
             }}
 
             let headerContent = '';
@@ -1728,8 +1746,13 @@ namespace FlashscoreOverlay
                 timeColHtml = `<div class='event__stage'><div class='event__stage--block'>${{displayTime}}${{blinkHtml}}</div></div>`;
             }} else {{
                 let inner = match.timeLabel || '\u2014';
+                let statusClass = '';
                 if (match.stageLabel) {{
-                    inner += `<div class='stage-label'>${{match.stageLabel}}</div>`;
+                    const stageLower = match.stageLabel.toLowerCase();
+                    if (stageLower.includes('finalizado') || stageLower.includes('final') || stageLower.includes('terminado')) {{
+                         statusClass = 'status-finished';
+                    }}
+                    inner += `<div class='stage-label ${{statusClass}}'>${{match.stageLabel}}</div>`;
                 }}
                 timeColHtml = `<div class='event__time'>${{inner}}</div>`;
             }}
