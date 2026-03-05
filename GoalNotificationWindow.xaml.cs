@@ -144,10 +144,12 @@ namespace FlashscoreOverlay
 
         private string BuildNotificationHtml(GoalNotifData d)
         {
-            var placeholder = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Crect width='40' height='40' fill='%23333355' rx='4'/%3E%3C/svg%3E";
-            var playerImg = string.IsNullOrWhiteSpace(d.PlayerImageUrl) ? placeholder : Esc(d.PlayerImageUrl);
-            var homeLogo = string.IsNullOrWhiteSpace(d.HomeLogo) ? placeholder : Esc(d.HomeLogo);
-            var awayLogo = string.IsNullOrWhiteSpace(d.AwayLogo) ? placeholder : Esc(d.AwayLogo);
+            var logoPlaceholder = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Crect width='40' height='40' fill='%23333355' rx='4'/%3E%3C/svg%3E";
+            var playerPlaceholder = "https://www.flashscore.es/res/image/data/placeholder-player.png";
+            
+            var playerImg = string.IsNullOrWhiteSpace(d.PlayerImageUrl) ? playerPlaceholder : Esc(d.PlayerImageUrl);
+            var homeLogo = string.IsNullOrWhiteSpace(d.HomeLogo) ? logoPlaceholder : Esc(d.HomeLogo);
+            var awayLogo = string.IsNullOrWhiteSpace(d.AwayLogo) ? logoPlaceholder : Esc(d.AwayLogo);
 
             // Determine which score is red (the scoring team)
             var homeScoreClass = d.ScoringTeamSide == "home" ? "fs-rd" : "";
@@ -173,20 +175,21 @@ namespace FlashscoreOverlay
     }}
 
     .fs-l {{
-        background: #2b2b2b; padding: 10px 12px;
+        background: #2b2b2b; padding: 12px 14px;
         display: flex; flex-direction: column;
         align-items: center; justify-content: center;
-        min-width: 110px; border-right: 1px solid #444;
+        min-width: 130px; border-right: 1px solid #444;
         gap: 3px;
     }}
     .fs-img {{
-        width: 60px; height: 60px;
+        width: 75px; height: 75px;
         border-radius: 50%; object-fit: cover;
-        margin-bottom: 2px; border: 2px solid #444;
+        margin-bottom: 4px; border: 2px solid #FF0046;
+        background: #333;
     }}
-    .fs-nm {{ font-size: 12px; font-weight: 700; color: #fff; text-align: center; line-height: 1.2; }}
-    .fs-tm {{ font-size: 10px; color: #aaa; text-align: center; }}
-    .fs-gol {{ color: #FF0046; font-weight: 900; font-size: 15px; margin-top: 3px; letter-spacing: 1px; }}
+    .fs-nm {{ font-size: 13px; font-weight: 800; color: #fff; text-align: center; line-height: 1.2; }}
+    .fs-tm {{ font-size: 11px; color: #aaa; text-align: center; }}
+    .fs-gol {{ color: #FF0046; font-weight: 900; font-size: 16px; margin-top: 4px; letter-spacing: 1px; }}
 
     .fs-r {{
         flex: 1; padding: 0 15px;
@@ -224,7 +227,7 @@ namespace FlashscoreOverlay
     <div class='fs-r'>
         <div class='fs-duel'>
             <div class='fs-col'>
-                <div class='fs-logo'><img src='{homeLogo}' onerror=""this.src='{placeholder}'""></div>
+                <div class='fs-logo'><img src='{homeLogo}' onerror=""this.src='{logoPlaceholder}'""></div>
                 <div class='{homeNameClass}'>{Esc(d.HomeTeam)}</div>
             </div>
             <div class='fs-col fs-sc-box'>
@@ -239,7 +242,7 @@ namespace FlashscoreOverlay
                 </div>
             </div>
             <div class='fs-col'>
-                <div class='fs-logo'><img src='{awayLogo}' onerror=""this.src='{placeholder}'""></div>
+                <div class='fs-logo'><img src='{awayLogo}' onerror=""this.src='{logoPlaceholder}'""></div>
                 <div class='{awayNameClass}'>{Esc(d.AwayTeam)}</div>
             </div>
         </div>

@@ -51,14 +51,23 @@ namespace FlashscoreOverlay
         // Active card notification windows for stacking
         private readonly List<CardNotificationWindow> _activeCardNotifications = new();
 
-        private class PendingGoal
+        private class PendingEvent
         {
-            public int GoalCount { get; set; }
+            public int EventCount { get; set; }
             public DateTime DetectedAt { get; set; }
+            public string Type { get; set; } = "goal"; // "goal" or "card"
         }
 
-        // Keep track of goals waiting for player names to be published
-        private readonly Dictionary<string, PendingGoal> _pendingGoals = new();
+        // Keep track of events waiting for player names
+        private readonly Dictionary<string, PendingEvent> _pendingGoals = new();
+        private readonly Dictionary<string, PendingEvent> _pendingCards = new();
+        private readonly Dictionary<string, string> _playerPhotoCache = new(); 
+        private bool _photoWebViewReady = false;
+        private string? _currentlyFetchingPlayerUrl = null;
+        private MatchEvent? _pendingNotificationEvent = null;
+        private MatchData? _pendingNotificationMatch = null;
+        private string? _pendingNotificationMinute = null;
+        private string? _pendingNotificationType = null; 
 
         private readonly DispatcherTimer _minuteSyncTimer;
 
@@ -123,6 +132,13 @@ namespace FlashscoreOverlay
                 MatchWebView.CoreWebView2.WebMessageReceived += CoreWebView2_WebMessageReceived;
                 MatchWebView.NavigationCompleted += MatchWebView_NavigationCompleted;
                 _webViewReady = true;
+
+                // Init hidden photo WebView2
+                await PhotoWebView.EnsureCoreWebView2Async(_sharedEnv);
+                PhotoWebView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
+                PhotoWebView.CoreWebView2.Settings.AreDevToolsEnabled = false;
+                PhotoWebView.CoreWebView2.NavigationCompleted += OnPhotoNavigationCompleted;
+                _photoWebViewReady = true;
 
                 RenderOverlay();
             }
@@ -604,53 +620,77 @@ namespace FlashscoreOverlay
                 }
                 else
                 {
-                    isNewCard = currentCardCount > previousCardCount;
                     _matchCardCounts[matchId] = currentCardCount;
                 }
 
-                // CHECK PENDING GOALS SYSTEM
+                // CHECK PENDING EVENTS SYSTEM (GOALS & CARDS)
                 bool triggerGoalBadge = false;
                 bool triggerGoalNotification = false;
+                bool triggerCardNotification = false;
 
+                // 1. Detección de Goles
                 if (isNewGoal && latestGoal != null)
                 {
-                    // A new goal was detected right now
-                    triggerGoalBadge = true; // Always show badge in list immediately
-
-                    bool hasPlayerName = !string.IsNullOrWhiteSpace(latestGoal.PlayerName);
-                    if (hasPlayerName)
+                    triggerGoalBadge = true; 
+                    if (!string.IsNullOrWhiteSpace(latestGoal.PlayerName))
                     {
-                        // Name published instantly, fire popup immediately
                         triggerGoalNotification = true;
                     }
                     else
                     {
-                        // Name missing, queue popup for up to 60 seconds
-                        _pendingGoals[matchId] = new PendingGoal
+                        _pendingGoals[matchId] = new PendingEvent
                         {
-                            GoalCount = currentGoalCount,
-                            DetectedAt = DateTime.Now
+                            EventCount = currentGoalCount,
+                            DetectedAt = DateTime.Now,
+                            Type = "goal"
                         };
                         Debug.WriteLine($"[OverlayWindow] Goal detected for {matchId} but missing player name. Popup queued.");
                     }
                 }
-                else if (_pendingGoals.TryGetValue(matchId, out var pending))
+                else if (_pendingGoals.TryGetValue(matchId, out var pendingGoal))
                 {
-                    // We are waiting for a player name for this match's popup
                     if (latestGoal != null && !string.IsNullOrWhiteSpace(latestGoal.PlayerName))
                     {
-                        // The name has finally arrived! Trigger popup and update badge
                         triggerGoalNotification = true;
-                        triggerGoalBadge = true; 
+                        if ((DateTime.Now - pendingGoal.DetectedAt).TotalSeconds < 60) triggerGoalBadge = true;
                         _pendingGoals.Remove(matchId);
-                        Debug.WriteLine($"[OverlayWindow] Player name arrived for pending goal on {matchId}. Triggering popup.");
                     }
-                    else if ((DateTime.Now - pending.DetectedAt).TotalSeconds >= 180)
+                    else if ((DateTime.Now - pendingGoal.DetectedAt).TotalSeconds >= 180)
                     {
-                        // Timeout reached, show popup anyway
                         triggerGoalNotification = true;
                         _pendingGoals.Remove(matchId);
-                        Debug.WriteLine($"[OverlayWindow] 180s timeout reached for pending goal on {matchId}. Showing popup without name.");
+                    }
+                }
+
+                // 2. Detección de Tarjetas
+                if (isNewCard && latestCard != null)
+                {
+                    if (!string.IsNullOrWhiteSpace(latestCard.PlayerName))
+                    {
+                        triggerCardNotification = true;
+                    }
+                    else
+                    {
+                        _pendingCards[matchId] = new PendingEvent
+                        {
+                            EventCount = currentCardCount,
+                            DetectedAt = DateTime.Now,
+                            Type = "card"
+                        };
+                        Debug.WriteLine($"[OverlayWindow] Card detected for {matchId} but missing player name. Popup queued (2 min).");
+                    }
+                }
+                else if (_pendingCards.TryGetValue(matchId, out var pendingCard))
+                {
+                    if (latestCard != null && !string.IsNullOrWhiteSpace(latestCard.PlayerName))
+                    {
+                        triggerCardNotification = true;
+                        _pendingCards.Remove(matchId);
+                    }
+                    else if ((DateTime.Now - pendingCard.DetectedAt).TotalSeconds >= 120) // 2 minutes wait for cards
+                    {
+                        triggerCardNotification = true;
+                        _pendingCards.Remove(matchId);
                     }
                 }
 
@@ -698,23 +738,23 @@ namespace FlashscoreOverlay
                         Debug.WriteLine($"[OverlayWindow] Badge GOL! {latestGoal.TeamSide} - {latestGoal.PlayerName} ({match.MatchId})");
                     }
 
-                    // Show popup notification if triggered (immediately with name or after delay)
+                    // Show popup notification if triggered
                     if (triggerGoalNotification && latestGoal != null)
                     {
                         var lookupId = match.OverlayId ?? match.MatchId;
                         if (lookupId != null && _highlightedMatches.Contains(lookupId))
                         {
-                            ShowGoalNotification(match, latestGoal, detailData.Stage ?? "");
+                            TryShowNotificationWithPhoto(match, latestGoal, detailData.Stage ?? "", "goal");
                         }
                     }
 
                     // Show popup notification for cards on highlighted matches
-                    if (isNewCard && latestCard != null)
+                    if (triggerCardNotification && latestCard != null)
                     {
                         var lookupId = match.OverlayId ?? match.MatchId;
                         if (lookupId != null && _highlightedMatches.Contains(lookupId))
                         {
-                            ShowCardNotification(match, latestCard, detailData.Stage ?? "");
+                            TryShowNotificationWithPhoto(match, latestCard, detailData.Stage ?? "", "card");
                         }
                     }
                 }
@@ -734,7 +774,7 @@ namespace FlashscoreOverlay
             }
         }
 
-        private void ShowGoalNotification(MatchData match, MatchEvent goalEvent, string currentMinute)
+        private void ShowGoalNotification(MatchData match, MatchEvent goalEvent, string currentMinute, string playerImageUrl = "")
         {
             try
             {
@@ -761,7 +801,7 @@ namespace FlashscoreOverlay
                 var notif = new GoalNotificationWindow(
                     playerName: goalEvent.PlayerName ?? "",
                     teamName: teamName ?? "",
-                    playerImageUrl: "", // Player image not always available
+                    playerImageUrl: playerImageUrl, 
                     homeTeam: match.HomeTeam ?? "",
                     awayTeam: match.AwayTeam ?? "",
                     homeScore: match.HomeScore ?? "0",
@@ -795,7 +835,7 @@ namespace FlashscoreOverlay
             }
         }
 
-        private void ShowCardNotification(MatchData match, MatchEvent cardEvent, string currentMinute)
+        private void ShowCardNotification(MatchData match, MatchEvent cardEvent, string currentMinute, string playerImageUrl = "")
         {
             try
             {
@@ -851,6 +891,124 @@ namespace FlashscoreOverlay
             {
                 Debug.WriteLine($"[OverlayWindow] Error pushing card notification: {ex.Message}");
             }
+        }
+
+        private void TryShowNotificationWithPhoto(MatchData match, MatchEvent ev, string minute, string type)
+        {
+            if (string.IsNullOrWhiteSpace(ev.PlayerUrl) || _playerPhotoCache.ContainsKey(ev.PlayerUrl))
+            {
+                string photoUrl = "";
+                if (!string.IsNullOrWhiteSpace(ev.PlayerUrl)) _playerPhotoCache.TryGetValue(ev.PlayerUrl, out photoUrl);
+                
+                if (type == "goal") ShowGoalNotification(match, ev, minute, photoUrl);
+                else ShowCardNotification(match, ev, minute, photoUrl);
+            }
+            else
+            {
+                QueuePhotoFetch(match, ev, minute, type);
+            }
+        }
+
+        private void QueuePhotoFetch(MatchData match, MatchEvent ev, string minute, string type)
+        {
+            if (!_photoWebViewReady || string.IsNullOrWhiteSpace(ev.PlayerUrl)) return;
+
+            // If we are already fetching THIS player, don't start again
+            if (_currentlyFetchingPlayerUrl == ev.PlayerUrl) return;
+
+            _currentlyFetchingPlayerUrl = ev.PlayerUrl;
+            _pendingNotificationEvent = ev;
+            _pendingNotificationMatch = match;
+            _pendingNotificationMinute = minute;
+            _pendingNotificationType = type;
+
+            PhotoWebView.CoreWebView2.Navigate(ev.PlayerUrl);
+            Debug.WriteLine($"[OverlayWindow] Fetching photo for {ev.PlayerName} from {ev.PlayerUrl}");
+            
+            // Safety timeout: if it takes too long, show without photo
+            Task.Delay(5000).ContinueWith(t => {
+                Dispatcher.Invoke(() => {
+                    if (_currentlyFetchingPlayerUrl == ev.PlayerUrl)
+                    {
+                        Debug.WriteLine("[OverlayWindow] Photo fetch timeout. Showing notification without photo.");
+                        FinishPendingNotification("");
+                    }
+                });
+            });
+        }
+
+        private async void OnPhotoNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
+        {
+            if (_currentlyFetchingPlayerUrl == null) return;
+            
+            if (!e.IsSuccess)
+            {
+                Debug.WriteLine($"[OverlayWindow] Photo navigation failed for {_currentlyFetchingPlayerUrl}. Reason: {e.WebErrorStatus}");
+                FinishPendingNotification("");
+                return;
+            }
+
+            try
+            {
+                // Wait slightly longer for JS to settle
+                await Task.Delay(800);
+
+                // Robust selector that tries multiple matches
+                var script = @"(function() { 
+                    try {
+                        const imgStandard = document.querySelector('.playerHeader__wrapper img');
+                        if (imgStandard && imgStandard.src && !imgStandard.src.includes('teamLogo')) {
+                            return imgStandard.src;
+                        }
+                        const imgByClass = document.querySelector('div[id*=""player""] img, div[class*=""player""] img');
+                        if (imgByClass && imgByClass.src) {
+                            return imgByClass.src;
+                        }
+                        return '';
+                    } catch(e) { return ''; }
+                })();";
+                
+                var resultJson = await PhotoWebView.CoreWebView2.ExecuteScriptAsync(script);
+                var photoUrl = JsonConvert.DeserializeObject<string>(resultJson) ?? "";
+
+                if (!string.IsNullOrWhiteSpace(photoUrl))
+                {
+                    Debug.WriteLine($"[OverlayWindow] Found player photo: {photoUrl}");
+                }
+                else
+                {
+                    Debug.WriteLine("[OverlayWindow] No player photo found on page after navigation.");
+                }
+
+                FinishPendingNotification(photoUrl);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[OverlayWindow] Error extracting photo: {ex.Message}");
+                FinishPendingNotification("");
+            }
+        }
+
+        private void FinishPendingNotification(string photoUrl)
+        {
+            if (_currentlyFetchingPlayerUrl != null)
+            {
+                _playerPhotoCache[_currentlyFetchingPlayerUrl] = photoUrl;
+            }
+
+            if (_pendingNotificationEvent != null && _pendingNotificationMatch != null)
+            {
+                if (_pendingNotificationType == "goal")
+                    ShowGoalNotification(_pendingNotificationMatch, _pendingNotificationEvent, _pendingNotificationMinute ?? "", photoUrl);
+                else
+                    ShowCardNotification(_pendingNotificationMatch, _pendingNotificationEvent, _pendingNotificationMinute ?? "", photoUrl);
+            }
+
+            _currentlyFetchingPlayerUrl = null;
+            _pendingNotificationEvent = null;
+            _pendingNotificationMatch = null;
+            _pendingNotificationMinute = null;
+            _pendingNotificationType = null;
         }
 
         private async void ComprobarMinutoActualizado(object? sender, EventArgs e)

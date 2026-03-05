@@ -35,7 +35,8 @@ namespace FlashscoreOverlay
             string minute,
             string stageText,
             string matchUrl,
-            int stackIndex)
+            int stackIndex,
+            string playerImageUrl = "")
         {
             InitializeComponent();
             _matchUrl = matchUrl;
@@ -55,7 +56,7 @@ namespace FlashscoreOverlay
             Tag = new CardNotifData
             {
                 CardType = cardType ?? "yellowCard",
-                PlayerName = string.IsNullOrWhiteSpace(playerName) ? "Desconocido" : playerName,
+                PlayerName = string.IsNullOrWhiteSpace(playerName) ? "" : playerName,
                 TeamName = teamName ?? "",
                 IncidentDescription = incidentDescription ?? "",
                 HomeTeam = homeTeam ?? "",
@@ -65,7 +66,8 @@ namespace FlashscoreOverlay
                 HomeLogo = homeLogo ?? "",
                 AwayLogo = awayLogo ?? "",
                 Minute = minute ?? "",
-                StageText = stageText ?? ""
+                StageText = stageText ?? "",
+                PlayerImageUrl = playerImageUrl ?? ""
             };
         }
 
@@ -143,9 +145,12 @@ namespace FlashscoreOverlay
 
         private string BuildNotificationHtml(CardNotifData d)
         {
-            var placeholder = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Crect width='40' height='40' fill='%23333355' rx='4'/%3E%3C/svg%3E";
-            var homeLogo = string.IsNullOrWhiteSpace(d.HomeLogo) ? placeholder : Esc(d.HomeLogo);
-            var awayLogo = string.IsNullOrWhiteSpace(d.AwayLogo) ? placeholder : Esc(d.AwayLogo);
+            var logoPlaceholder = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Crect width='40' height='40' fill='%23333355' rx='4'/%3E%3C/svg%3E";
+            var playerPlaceholder = "https://www.flashscore.es/res/image/data/placeholder-player.png";
+
+            var homeLogo = string.IsNullOrWhiteSpace(d.HomeLogo) ? logoPlaceholder : Esc(d.HomeLogo);
+            var awayLogo = string.IsNullOrWhiteSpace(d.AwayLogo) ? logoPlaceholder : Esc(d.AwayLogo);
+            var playerImg = string.IsNullOrWhiteSpace(d.PlayerImageUrl) ? playerPlaceholder : Esc(d.PlayerImageUrl);
 
             bool isRed = d.CardType.IndexOf("red", StringComparison.OrdinalIgnoreCase) >= 0;
             string cardColor = isRed ? "#FF0046" : "#FFCC00";
@@ -173,15 +178,21 @@ namespace FlashscoreOverlay
         background: {gradient}; padding: 10px 12px;
         display: flex; flex-direction: column;
         align-items: center; justify-content: center;
-        min-width: 130px; border-right: 1px solid #444;
+        min-width: 140px; border-right: 1px solid #444;
         gap: 3px;
         color: {cardColorText};
         text-shadow: {textShadow};
     }}
+    .fs-img {{
+        width: 65px; height: 65px;
+        border-radius: 50%; object-fit: cover;
+        margin-bottom: 4px; border: 2px solid rgba(255,255,255,0.4);
+        background: rgba(0,0,0,0.2);
+    }}
     .fs-nm {{ font-size: 13px; font-weight: 800; text-align: center; line-height: 1.2; text-shadow: {textShadow}; }}
     .fs-tm {{ font-size: 11px; text-align: center; font-weight: 600; opacity: 0.9; text-shadow: {textShadow}; }}
     .fs-card-text {{ font-weight: 900; font-size: 13px; margin-top: 5px; letter-spacing: 0.5px; text-transform: uppercase; text-shadow: {textShadow}; }}
-    .fs-desc {{ font-size: 10px; opacity: 0.85; margin-top: 3px; font-style: italic; text-align: center; line-height: 1.1; max-width: 110px; text-shadow: {textShadow}; }}
+    .fs-desc {{ font-size: 10px; opacity: 0.85; margin-top: 3px; font-style: italic; text-align: center; line-height: 1.1; max-width: 120px; text-shadow: {textShadow}; }}
 
     .fs-r {{
         flex: 1; padding: 0 15px;
@@ -209,6 +220,7 @@ namespace FlashscoreOverlay
 <body>
 <div id='notif' onclick=""window.chrome.webview.postMessage('click')"">
     <div class='fs-l'>
+        {(!string.IsNullOrWhiteSpace(playerImg) ? $"<img class='fs-img' src='{playerImg}' onerror=\"this.style.display='none'\">" : "")}
         <div class='fs-nm'>{Esc(d.PlayerName)}</div>
         <div class='fs-tm'>{Esc(d.TeamName)}</div>
         <div class='fs-card-text'>{Esc(cardText)}</div>
@@ -217,7 +229,7 @@ namespace FlashscoreOverlay
     <div class='fs-r'>
         <div class='fs-duel'>
             <div class='fs-col'>
-                <div class='fs-logo'><img src='{homeLogo}' onerror=""this.src='{placeholder}'""></div>
+                <div class='fs-logo'><img src='{homeLogo}' onerror=""this.src='{logoPlaceholder}'""></div>
                 <div class='fs-tn'>{Esc(d.HomeTeam)}</div>
             </div>
             <div class='fs-col fs-sc-box'>
@@ -232,7 +244,7 @@ namespace FlashscoreOverlay
                 </div>
             </div>
             <div class='fs-col'>
-                <div class='fs-logo'><img src='{awayLogo}' onerror=""this.src='{placeholder}'""></div>
+                <div class='fs-logo'><img src='{awayLogo}' onerror=""this.src='{logoPlaceholder}'""></div>
                 <div class='fs-tn'>{Esc(d.AwayTeam)}</div>
             </div>
         </div>
@@ -259,6 +271,7 @@ namespace FlashscoreOverlay
             public string AwayLogo { get; set; } = "";
             public string Minute { get; set; } = "";
             public string StageText { get; set; } = "";
+            public string PlayerImageUrl { get; set; } = "";
         }
     }
 }

@@ -83,9 +83,14 @@
 
             <Grid Grid.Row="1">
                 <wv2:WebView2 x:Name="MatchWebView"
-                              HorizontalAlignment="Stretch"
-                              VerticalAlignment="Stretch"
-                              DefaultBackgroundColor="#1a1a2e"/>
+                               HorizontalAlignment="Stretch"
+                               VerticalAlignment="Stretch"
+                               DefaultBackgroundColor="#1a1a2e"/>
+
+                <!-- Hidden WebView for fetching player photos -->
+                <wv2:WebView2 x:Name="PhotoWebView" 
+                               Width="100" Height="100" 
+                               Visibility="Hidden" />
             </Grid>
         </Grid>
     </Border>
