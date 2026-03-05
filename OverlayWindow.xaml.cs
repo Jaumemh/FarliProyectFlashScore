@@ -501,6 +501,9 @@ namespace FlashscoreOverlay
                     {
                         comp.LeagueFlagUrl = detailData.LeagueFlagUrl;
                         Debug.WriteLine($"[OverlayWindow] LeagueFlagUrl set for {compId}: {detailData.LeagueFlagUrl}");
+                        
+                        // Force a re-render so the header shows the flag immediately
+                        RenderOverlay();
                     }
                 }
 
@@ -1681,7 +1684,7 @@ namespace FlashscoreOverlay
 
             let flagHtml = '';
             if (flagUrl) {{
-                flagHtml = `<img src='${{flagUrl}}' class='headerLeague__flag' alt='Flag' style='max-width:24px; max-height:16px; width:auto; height:auto; margin-right:8px; vertical-align:middle; border-radius:1px; object-fit:contain;'>`;
+                flagHtml = `<img src='${{flagUrl}}' class='headerLeague__flag' alt='Flag' style='max-width:24px; max-height:14px; width:auto; height:auto; margin-right:8px; vertical-align:middle; border-radius:1px; object-fit:contain;'>`;
             }}
 
             let headerContent = '';

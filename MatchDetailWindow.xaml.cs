@@ -280,11 +280,16 @@ namespace FlashscoreOverlay
                             // === BANDERA DE LIGA ===
                             let leagueFlagUrl = '';
                             try {
-                                const breadcrumb = document.querySelector('ol.wcl-breadcrumbList_lC9sI');
-                                if (breadcrumb) {
-                                    const flagImg = breadcrumb.querySelector('img.wcl-flag_bU4cQ');
-                                    if (flagImg && flagImg.src) {
-                                        leagueFlagUrl = flagImg.src;
+                                // 1. Try specific breadcrumb flag
+                                const flagImg = document.querySelector('img.wcl-flag_bU4cQ, .headerLeague__flag, .bc__flag img');
+                                if (flagImg && flagImg.src) {
+                                    leagueFlagUrl = flagImg.src;
+                                } else {
+                                    // 2. Try looking into breadcrumb list specifically
+                                    const breadcrumb = document.querySelector('ol.wcl-breadcrumbList_lC9sI, .bc__list');
+                                    if (breadcrumb) {
+                                        const bImg = breadcrumb.querySelector('img');
+                                        if (bImg && bImg.src) leagueFlagUrl = bImg.src;
                                     }
                                 }
                             } catch (flagErr) { leagueFlagUrl = ''; }
@@ -365,11 +370,12 @@ namespace FlashscoreOverlay
         [JsonProperty("events")]
         public List<MatchEvent>? Events { get; set; }
 
+        [JsonProperty("leagueFlagUrl")]
+        public string? LeagueFlagUrl { get; set; }
+
         [JsonProperty("timestamp")]
         public long Timestamp { get; set; }
 
-        [JsonProperty("leagueFlagUrl")]
-        public string? LeagueFlagUrl { get; set; }
     }
 
     /// <summary>

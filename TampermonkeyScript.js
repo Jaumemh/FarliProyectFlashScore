@@ -465,8 +465,10 @@
             }
         } catch (e) { leagueFlagUrl = ''; }
 
+        const competitionId = (categoryText && titleText) ? `${categoryText}:${titleText}` : (titleText || 'default');
+
         return {
-            competitionId: `${categoryText}:${titleText}`,
+            competitionId: competitionId,
             title: titleText, category: categoryText, sport: sport,
             logo: headerBody.querySelector('.headerLeague__logo img')?.src || '',
             href: href, hrefWithParam: hrefWithParam,
