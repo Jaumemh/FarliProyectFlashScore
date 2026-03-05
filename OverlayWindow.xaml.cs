@@ -594,45 +594,48 @@ namespace FlashscoreOverlay
                 }
 
                 // CHECK PENDING GOALS SYSTEM
-                bool triggerGoalOverlay = false;
+                bool triggerGoalBadge = false;
+                bool triggerGoalNotification = false;
 
                 if (isNewGoal && latestGoal != null)
                 {
                     // A new goal was detected right now
+                    triggerGoalBadge = true; // Always show badge in list immediately
+
                     bool hasPlayerName = !string.IsNullOrWhiteSpace(latestGoal.PlayerName);
-                    
                     if (hasPlayerName)
                     {
-                        // Name published instantly, fire overlay immediately
-                        triggerGoalOverlay = true;
+                        // Name published instantly, fire popup immediately
+                        triggerGoalNotification = true;
                     }
                     else
                     {
-                        // Name missing, queue it up for up to 60 seconds
+                        // Name missing, queue popup for up to 60 seconds
                         _pendingGoals[matchId] = new PendingGoal
                         {
                             GoalCount = currentGoalCount,
                             DetectedAt = DateTime.Now
                         };
-                        Debug.WriteLine($"[OverlayWindow] Goal detected for {matchId} but missing player name. Queued.");
+                        Debug.WriteLine($"[OverlayWindow] Goal detected for {matchId} but missing player name. Popup queued.");
                     }
                 }
                 else if (_pendingGoals.TryGetValue(matchId, out var pending))
                 {
-                    // We are waiting for a player name for this match
+                    // We are waiting for a player name for this match's popup
                     if (latestGoal != null && !string.IsNullOrWhiteSpace(latestGoal.PlayerName))
                     {
-                        // The name has finally arrived!
-                        triggerGoalOverlay = true;
+                        // The name has finally arrived! Trigger popup and update badge
+                        triggerGoalNotification = true;
+                        triggerGoalBadge = true; 
                         _pendingGoals.Remove(matchId);
-                        Debug.WriteLine($"[OverlayWindow] Player name arrived for pending goal on {matchId}.");
+                        Debug.WriteLine($"[OverlayWindow] Player name arrived for pending goal on {matchId}. Triggering popup.");
                     }
                     else if ((DateTime.Now - pending.DetectedAt).TotalSeconds >= 60)
                     {
-                        // Timeout reached, show it anyway
-                        triggerGoalOverlay = true;
+                        // Timeout reached, show popup anyway
+                        triggerGoalNotification = true;
                         _pendingGoals.Remove(matchId);
-                        Debug.WriteLine($"[OverlayWindow] 60s timeout reached for pending goal on {matchId}. Showing without name.");
+                        Debug.WriteLine($"[OverlayWindow] 60s timeout reached for pending goal on {matchId}. Showing popup without name.");
                     }
                 }
 
@@ -665,8 +668,8 @@ namespace FlashscoreOverlay
                         $"if(window.applyLiveUpdate) window.applyLiveUpdate('{escaped}');"
                     );
 
-                    // Show GOL badge if a goal was triggered
-                    if (triggerGoalOverlay && latestGoal != null)
+                    // Show GOL badge if triggered (immediately when score changes)
+                    if (triggerGoalBadge && latestGoal != null)
                     {
                         var side = (latestGoal.TeamSide ?? "home").Replace("'", "\\'");
                         var player = (latestGoal.PlayerName ?? "").Replace("'", "\\'");
@@ -677,9 +680,12 @@ namespace FlashscoreOverlay
                         await MatchWebView.CoreWebView2.ExecuteScriptAsync(
                             $"if(window.showGoalBadge) window.showGoalBadge('{match.MatchId}', '{side}', '{player}', '{badgeMinute}');"
                         );
-                        Debug.WriteLine($"[OverlayWindow] GOL! {latestGoal.TeamSide} - {latestGoal.PlayerName} ({match.MatchId})");
+                        Debug.WriteLine($"[OverlayWindow] Badge GOL! {latestGoal.TeamSide} - {latestGoal.PlayerName} ({match.MatchId})");
+                    }
 
-                        // Show popup notification for highlighted matches
+                    // Show popup notification if triggered (immediately with name or after delay)
+                    if (triggerGoalNotification && latestGoal != null)
+                    {
                         var lookupId = match.OverlayId ?? match.MatchId;
                         if (lookupId != null && _highlightedMatches.Contains(lookupId))
                         {
