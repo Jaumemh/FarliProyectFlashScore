@@ -22,6 +22,7 @@
 
     // Estilos CSS
     GM_addStyle(`
+        /* Estilo del botón circular */
         .fc-overlay-btn {
             position: absolute;
             right: 10px;
@@ -29,7 +30,7 @@
             width: 30px;
             height: 30px;
             border-radius: 50%;
-            background-color: #C80037;
+            background-color: #007bff;
             color: white;
             border: none;
             cursor: pointer;
@@ -40,10 +41,9 @@
             justify-content: center;
             z-index: 10000;
             box-shadow: 0 2px 5px rgba(0,0,0,0.3);
-            transition: background-color 0.3s;
         }
         .fc-overlay-btn:hover {
-            background-color: #a0002b;
+            background-color: #0056b3;
         }
         .fc-overlay-btn.active {
             background-color: #0787FA;
@@ -51,6 +51,189 @@
         .fc-overlay-btn.active:hover {
             background-color: #0567ca;
         }
+
+        /* Contenedor del overlay */
+        .fc-overlay {
+            position: fixed;
+            top: 50px;
+            left: 50px;
+            z-index: 2147483647;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.8);
+            background-color: #000000 !important;
+            min-width: 400px;
+            border: 1px solid #333;
+            cursor: default !important;
+        }
+
+        .fc-overlay .fc-overlay-btn {
+            display: none !important;
+        }
+
+        /* Para asegurarse de que el overlay esté siempre visible */
+        .fc-overlay.always-on-top {
+            z-index: 2147483647 !important;
+        }
+
+        /* Estilo para el contenedor interno del overlay */
+        .fc-overlay-inner {
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: #000000;
+            cursor: default !important;
+        }
+
+        /* Estilo para el encabezado de la liga */
+        .fc-overlay-header {
+            padding: 8px 12px;
+            background: #1a1a1a;
+            border-bottom: 1px solid #333;
+            color: white;
+            font-weight: bold;
+            font-size: 12px;
+            cursor: default !important;
+        }
+
+        /* Contenedor de partidos */
+        .fc-matches-container {
+            padding: 10px;
+            background-color: #000000;
+            cursor: default !important;
+        }
+
+        /* Ocultar elementos no deseados en el overlay */
+        .fc-overlay .headerLeague__star,
+        .fc-overlay .wizard__relativeWrapper,
+        .fc-overlay .headerLeague__actions,
+        .fc-overlay .anclar-partido-btn,
+        .fc-overlay .wcl-favorite_ggUc2,
+        .fc-overlay .wcl-pin_J5btx,
+        .fc-overlay .wcl-accordion_7Fi80 {
+            display: none !important;
+        }
+
+        /* Prevenir cualquier interacción con clics simples */
+        .fc-overlay a {
+            pointer-events: none !important;
+        }
+
+        .fc-overlay .eventRowLink {
+            display: none !important;
+        }
+
+        /* Asegurar que los partidos se muestren correctamente */
+        .fc-overlay .event__match {
+            display: grid !important;
+            grid-template-columns: 30px auto 1fr auto 30px 40px;
+            grid-template-rows: auto auto;
+            align-items: center;
+            padding: 8px 10px;
+            background-color: #000000;
+            min-height: 60px;
+            gap: 4px;
+            width: 100%;
+            box-sizing: border-box;
+            margin-bottom: 5px;
+            border-bottom: 1px solid #333;
+            cursor: default !important;
+        }
+
+        .fc-overlay .event__match:last-child {
+            border-bottom: none;
+        }
+
+        /* Estilos específicos para elementos del partido */
+        .fc-overlay .event__stage {
+            grid-column: 1;
+            grid-row: 1 / span 2;
+            color: #ff4444 !important;
+            font-size: 11px;
+            text-align: center;
+            white-space: nowrap;
+        }
+
+        .fc-overlay .event__logo--home {
+            grid-column: 2;
+            grid-row: 1;
+            width: 20px;
+            height: 20px;
+        }
+
+        .fc-overlay .event__participant--home {
+            grid-column: 3;
+            grid-row: 1;
+            color: #ffffff !important;
+            font-size: 12px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .fc-overlay .event__score--home {
+            grid-column: 4;
+            grid-row: 1;
+            color: #ffffff !important;
+            font-size: 14px;
+            font-weight: bold;
+            text-align: center;
+        }
+
+        .fc-overlay .event__part--home {
+            grid-column: 5;
+            grid-row: 1;
+            color: #cccccc !important;
+            font-size: 11px;
+            text-align: center;
+        }
+
+        .fc-overlay .event__logo--away {
+            grid-column: 2;
+            grid-row: 2;
+            width: 20px;
+            height: 20px;
+        }
+
+        .fc-overlay .event__participant--away {
+            grid-column: 3;
+            grid-row: 2;
+            color: #ffffff !important;
+            font-size: 12px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .fc-overlay .event__score--away {
+            grid-column: 4;
+            grid-row: 2;
+            color: #ffffff !important;
+            font-size: 14px;
+            font-weight: bold;
+            text-align: center;
+        }
+
+        .fc-overlay .event__part--away {
+            grid-column: 5;
+            grid-row: 2;
+            color: #cccccc !important;
+            font-size: 11px;
+            text-align: center;
+        }
+
+        .fc-overlay .event__icon--tv {
+            grid-column: 6;
+            grid-row: 1 / span 2;
+            align-self: center;
+            justify-self: center;
+        }
+
+        /* Estilo para el botón de cerrar con cursor normal */
+        .fc-close-btn {
+            cursor: default !important;
+        }
+
         .headerLeague__wrapper {
             cursor: context-menu;
         }
