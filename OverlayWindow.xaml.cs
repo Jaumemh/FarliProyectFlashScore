@@ -159,6 +159,13 @@ namespace FlashscoreOverlay
                 var msg = JsonConvert.DeserializeObject<WebMessage>(json);
                 if (msg == null) return;
 
+                // Update activity if msg has TabId
+                if (!string.IsNullOrWhiteSpace(msg.TabId))
+                {
+                    var mainWin = Application.Current.MainWindow as MainWindow;
+                    mainWin?.UpdateTabActivity(msg.TabId);
+                }
+
                 switch (msg.Type)
                 {
                     case "close":
@@ -237,22 +244,42 @@ namespace FlashscoreOverlay
         private void NavigateInTab(string? tabId, string href)
         {
             if (string.IsNullOrWhiteSpace(href)) return;
-            // Use the first available tabId from either the message or any active match
-            var effectiveTab = tabId;
-            if (string.IsNullOrWhiteSpace(effectiveTab))
-            {
-                effectiveTab = _matches.Values.FirstOrDefault(m => !string.IsNullOrWhiteSpace(m.TabId))?.TabId;
-            }
-
-            if (!string.IsNullOrWhiteSpace(effectiveTab))
-            {
-                var main = Application.Current.MainWindow as MainWindow;
-                main?.SetPendingCommandForTab(effectiveTab!, new BrowserCommand { Action = "navigate", Href = href });
-            }
-            else
+            
+            var main = Application.Current.MainWindow as MainWindow;
+            if (main == null)
             {
                 try { Process.Start(new ProcessStartInfo(href) { UseShellExecute = true }); } catch { }
+                return;
             }
+
+            // 1. Try specified tab if active
+            if (!string.IsNullOrWhiteSpace(tabId) && main.IsTabActive(tabId))
+            {
+                main.SetPendingCommandForTab(tabId, new BrowserCommand { Action = "navigate", Href = href });
+                return;
+            }
+
+            // 2. Try ANY active tab from matches
+            var anyMatchTab = _matches.Values
+                .Select(m => m.TabId)
+                .FirstOrDefault(t => !string.IsNullOrWhiteSpace(t) && main.IsTabActive(t!));
+
+            if (anyMatchTab != null)
+            {
+                main.SetPendingCommandForTab(anyMatchTab, new BrowserCommand { Action = "navigate", Href = href });
+                return;
+            }
+
+            // 3. Try ANY active tab from history
+            var globalActiveTab = main.GetAnyActiveTab();
+            if (globalActiveTab != null)
+            {
+                main.SetPendingCommandForTab(globalActiveTab, new BrowserCommand { Action = "navigate", Href = href });
+                return;
+            }
+
+            // 4. Default Fallback: Open in system browser (new window/tab)
+            try { Process.Start(new ProcessStartInfo(href) { UseShellExecute = true }); } catch { }
         }
 
         private async Task HandleOpenTeamAsync(WebMessage msg)
@@ -1210,8 +1237,8 @@ namespace FlashscoreOverlay
             var stage = (stageSource ?? "").Trim().ToLowerInvariant();
             var time = (timeSource ?? "").Trim().ToLowerInvariant();
 
-            if (stage.Contains("preview") || stage.Contains("finalizado") || stage.Contains("final") || stage.Contains("terminado")) return false;
-            if (stage.Contains("penaltis") || stage.Contains("postergado") || stage.Contains("aplazado") || stage.Contains("cancelado")) return false;
+            if (stage.Contains("preview") || stage.Contains("finalizado") || stage.Contains("final") || stage.Contains("terminado") || stage.Contains("concluido")) return false;
+            if (stage.Contains("penaltis") || stage.Contains("postergado") || stage.Contains("aplazado") || stage.Contains("cancelado") || stage.Contains("suspendido")) return false;
 
             if (stage.Contains("descanso") || stage.Contains("en directo") || stage.Contains("en curso") || stage.Contains("juego") || stage.Contains("gol")) return true;
             if (stage.Contains("parte") || stage.Contains("tiempo") || stage.Contains("prórroga") || stage.Contains("extra")) return true;
@@ -1313,7 +1340,7 @@ namespace FlashscoreOverlay
         }}
 
         .headerLeague__category {{
-            color: var(--text-secondary);
+            color: #ffffff;
             font-weight: 700;
             font-size: 12px;
             text-transform: uppercase;
@@ -1453,9 +1480,10 @@ namespace FlashscoreOverlay
         }}
 
         /* Red team name during GOL */
-        .team-item.gol-team-highlight .team-name {{
+        .team-item.gol-team-highlight .team-name,
+        .tennis-player.gol-team-highlight .team-name {{
             color: var(--color-primary) !important;
-            font-weight: 700;
+            font-weight: 700 !important;
         }}
 
         /* Teams block */
@@ -1498,14 +1526,20 @@ namespace FlashscoreOverlay
 
         .team-name {{
             font-size: 12px;
-            font-weight: 600;
-            color: var(--text-main);
+            font-weight: 400;
+            color: #ffffff;
             line-height: 1.25;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
             cursor: pointer;
-            transition: color 0.15s ease;
+            transition: color 0.15s ease, font-weight 0.15s ease;
+        }}
+
+        /* Only winning team gets bold in finished matches */
+        .match-finished .team-item.is-winner .team-name,
+        .match-finished .tennis-player.is-winner .team-name {{
+            font-weight: 700;
         }}
 
         /* Tennis Service Indicator */
@@ -1913,7 +1947,7 @@ namespace FlashscoreOverlay
                     }}
                     inner += `<div class='stage-label ${{statusClass}}'>${{match.stageLabel}}</div>`;
                 }}
-                timeColHtml = `<div class='event__time'>${{inner}}</div>`;
+                timeColHtml = `<div class='event__time ${{statusClass}}'>${{inner}}</div>`;
             }}
 
             // --- Detect Tennis Mode ---
@@ -1936,7 +1970,16 @@ namespace FlashscoreOverlay
             const homeHref = match.homeHref || '';
             const awayHref = match.awayHref || '';
             
+            const isFinished = !isLive && !!match.stageLabel && 
+                (match.stageLabel.toLowerCase().includes('finalizado') || 
+                 match.stageLabel.toLowerCase().includes('final') || 
+                 match.stageLabel.toLowerCase().includes('terminado'));
+
+            const rowClass = isTennis ? 'tennis-row' : 'match-row';
+            const extraRowClass = isFinished ? ' match-finished' : '';
+
             if (isTennis) {{
+                // ... (Tennis implementation)
                 const homeFlagSrc = match.homeFlag || placeholder;
                 const awayFlagSrc = match.awayFlag || placeholder;
 
@@ -1948,6 +1991,12 @@ namespace FlashscoreOverlay
                 }}
                 homeSetsVal = homeSetsVal || '0';
                 awaySetsVal = awaySetsVal || '0';
+
+                // Winner detection for tennis
+                const hSets = parseInt(homeSetsVal, 10);
+                const aSets = parseInt(awaySetsVal, 10);
+                const homeWinnerClass = (isFinished && hSets > aSets) ? ' is-winner' : '';
+                const awayWinnerClass = (isFinished && aSets > hSets) ? ' is-winner' : '';
 
                 const setScores = match.setScores || [];
                 const parsedSets = setScores.map(s => {{
@@ -1983,17 +2032,17 @@ namespace FlashscoreOverlay
                 }}
 
                 return `
-            <div class='tennis-row' data-id='${{matchId}}' data-url='${{matchUrl}}'>
+            <div class='${{rowClass}}${{extraRowClass}}' data-id='${{matchId}}' data-url='${{matchUrl}}'>
                 <a href='${{matchUrl}}' class='row-link' aria-label='Ver partido'></a>
                 ${{timeColHtml}}
                 <div class='tennis-body'>
                     <div class='tennis-names'>
-                        <div class='tennis-player' data-team-name='${{homeName}}' data-team-href='${{homeHref}}' data-match-url='${{matchUrl}}'>
+                        <div class='tennis-player${{homeWinnerClass}}' data-team-name='${{homeName}}' data-team-href='${{homeHref}}' data-match-url='${{matchUrl}}'>
                             <img class='flag-icon' src='${{homeFlagSrc}}' onerror=""this.onerror=null;this.src='${{placeholder}}'"" alt=''>
                             <span class='team-name'>${{homeName}}</span>
                             ${{homeServiceHtml}}
                         </div>
-                        <div class='tennis-player' data-team-name='${{awayName}}' data-team-href='${{awayHref}}' data-match-url='${{matchUrl}}'>
+                        <div class='tennis-player${{awayWinnerClass}}' data-team-name='${{awayName}}' data-team-href='${{awayHref}}' data-match-url='${{matchUrl}}'>
                             <img class='flag-icon' src='${{awayFlagSrc}}' onerror=""this.onerror=null;this.src='${{placeholder}}'"" alt=''>
                             <span class='team-name'>${{awayName}}</span>
                             ${{awayServiceHtml}}
@@ -2015,17 +2064,23 @@ namespace FlashscoreOverlay
             const homeScoreText = match.homeScore || (hasScore ? '0' : '-');
             const awayScoreText = match.awayScore || (hasScore ? '0' : '-');
 
+            // Winner detection for football
+            const hScore = parseInt(match.homeScore || '0', 10);
+            const aScore = parseInt(match.awayScore || '0', 10);
+            const homeWinnerClass = (isFinished && hScore > aScore) ? ' is-winner' : '';
+            const awayWinnerClass = (isFinished && aScore > hScore) ? ' is-winner' : '';
+
             return `
-            <div class='match-row' data-id='${{matchId}}' data-url='${{matchUrl}}'>
+            <div class='${{rowClass}}${{extraRowClass}}' data-id='${{matchId}}' data-url='${{matchUrl}}'>
                 <a href='${{matchUrl}}' class='row-link' aria-label='Ver partido'></a>
                 ${{timeColHtml}}
                 <div class='teams-container'>
-                    <div class='team-item' data-team-name='${{homeName}}' data-team-href='${{homeHref}}' data-match-url='${{matchUrl}}'>
+                    <div class='team-item${{homeWinnerClass}}' data-team-name='${{homeName}}' data-team-href='${{homeHref}}' data-match-url='${{matchUrl}}'>
                         <img class='team-logo' src='${{homeLogoSrc}}' onerror=""this.onerror=null;this.src='${{placeholder}}'"" alt=''>
                         <span class='team-name'>${{homeName}}</span>
                         ${{match.homeRedCards > 0 ? `<span class='red-card-icon'></span>` : ''}}
                     </div>
-                    <div class='team-item' data-team-name='${{awayName}}' data-team-href='${{awayHref}}' data-match-url='${{matchUrl}}'>
+                    <div class='team-item${{awayWinnerClass}}' data-team-name='${{awayName}}' data-team-href='${{awayHref}}' data-match-url='${{matchUrl}}'>
                         <img class='team-logo' src='${{awayLogoSrc}}' onerror=""this.onerror=null;this.src='${{placeholder}}'"" alt=''>
                         <span class='team-name'>${{awayName}}</span>
                         ${{match.awayRedCards > 0 ? `<span class='red-card-icon'></span>` : ''}}
@@ -2096,19 +2151,57 @@ namespace FlashscoreOverlay
                     const timeEl = row.querySelector('.event__time');
 
                     if (m.stage) {{
+                        const stageLower = m.stage.toLowerCase();
+                        const isFinished = stageLower.includes('finalizado') || stageLower.includes('final') || stageLower.includes('terminado');
+                        
                         if (stageEl) {{
                             const stageBlock = stageEl.querySelector('.event__stage--block');
                             if (stageBlock) {{
                                 let displayTime = m.stage.replace(/'/g, '').trim();
-                                const blinkSpan = m.hasBlink ? ""<span class='blink'>&#39;</span>"" : '';
+                                const blinkSpan = (m.hasBlink && !isFinished) ? ""<span class='blink'>&#39;</span>"" : '';
                                 stageBlock.innerHTML = displayTime + blinkSpan;
+                                
+                                if (isFinished) {{
+                                    stageEl.classList.remove('event__stage');
+                                    stageEl.classList.add('status-finished');
+                                    row.classList.add('match-finished');
+                                    
+                                    // Detect winner in JS too
+                                    const hScore = parseInt(m.homeScore || '0', 10);
+                                    const aScore = parseInt(m.awayScore || '0', 10);
+                                    const teams = row.querySelectorAll('.team-item, .tennis-player');
+                                    if (teams.length >= 2) {{
+                                        teams[0].classList.toggle('is-winner', hScore > aScore);
+                                        teams[1].classList.toggle('is-winner', aScore > hScore);
+                                    }}
+
+                                    // Also find score-vals and mark them finished
+                                    const scoreVals = row.querySelectorAll('.score-val');
+                                    scoreVals.forEach(v => v.classList.add('finished'));
+                                }}
                             }}
                         }} else if (timeEl) {{
                             const newDiv = document.createElement('div');
-                            newDiv.className = 'event__stage';
+                            newDiv.className = isFinished ? 'event__time status-finished' : 'event__stage';
+                            
                             let displayTime = m.stage.replace(/'/g, '').trim();
-                            const blinkSpan = m.hasBlink ? ""<span class='blink'>&#39;</span>"" : '';
-                            newDiv.innerHTML = ""<div class='event__stage--block'>"" + displayTime + blinkSpan + '</div>';
+                            const blinkSpan = (m.hasBlink && !isFinished) ? ""<span class='blink'>&#39;</span>"" : '';
+                            
+                            if (isFinished) {{
+                                newDiv.innerHTML = displayTime;
+                                row.classList.add('match-finished');
+
+                                // Detect winner in JS too
+                                const hScore = parseInt(m.homeScore || '0', 10);
+                                const aScore = parseInt(m.awayScore || '0', 10);
+                                const teams = row.querySelectorAll('.team-item, .tennis-player');
+                                if (teams.length >= 2) {{
+                                    teams[0].classList.toggle('is-winner', hScore > aScore);
+                                    teams[1].classList.toggle('is-winner', aScore > hScore);
+                                }}
+                            }} else {{
+                                newDiv.innerHTML = ""<div class='event__stage--block'>"" + displayTime + blinkSpan + '</div>';
+                            }}
                             timeEl.replaceWith(newDiv);
                         }}
                     }} else if (m.time && timeEl) {{
@@ -2160,7 +2253,7 @@ namespace FlashscoreOverlay
             try {{
                 const row = container.querySelector('[data-id=""' + matchId + '""]');
                 if (!row) return;
-                const teams = row.querySelectorAll('.team-item');
+                const teams = row.querySelectorAll('.team-item, .tennis-player');
                 if (teams.length < 2) return;
                 const teamEl = teamSide === 'away' ? teams[1] : teams[0];
 

@@ -162,8 +162,10 @@ namespace FlashscoreOverlay
 
                             // === TIME / STAGE ===
                             // .detailScore__status shows text like '1er Tiempo 47:53 +3', 'Descanso', 'FINALIZADO'
+                            // Fallback: .fixedHeaderDuel__detailStatus (found in some variants)
                             const statusEl = document.querySelector('.detailScore__status');
-                            const rawStage = statusEl ? statusEl.textContent.trim() : '';
+                            const fixedStatusEl = document.querySelector('.fixedHeaderDuel__detailStatus');
+                            const rawStage = (statusEl ? statusEl.textContent.trim() : '') || (fixedStatusEl ? fixedStatusEl.textContent.trim() : '');
 
                             let minute = '';
                             let isLive = false;
@@ -172,8 +174,8 @@ namespace FlashscoreOverlay
                             if (!rawStage || /^\d{2}\.\d{2}\.\d{4}/.test(rawStage)) {
                                 minute = '';
                                 isLive = false;
-                            } else if (/finalizado|final/i.test(rawStage)) {
-                                minute = '';
+                            } else if (/finalizado|final|terminado/i.test(rawStage)) {
+                                minute = rawStage; // Preserve status text like 'Finalizado'
                                 isLive = false;
                             } else if (/descanso/i.test(rawStage)) {
                                 minute = 'Descanso';

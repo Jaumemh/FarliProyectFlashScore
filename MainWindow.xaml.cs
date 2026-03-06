@@ -28,6 +28,7 @@ namespace FlashscoreOverlay
         private readonly Dictionary<string, string> _matchTabMap = new();
 
         private readonly Dictionary<string, BrowserCommand> pendingCommands = new();
+        private readonly Dictionary<string, DateTime> _tabLastActivity = new();
 
         public MainWindow()
         {
@@ -117,8 +118,13 @@ namespace FlashscoreOverlay
                             context.Response.ContentLength64 = buffer.Length;
                             await context.Response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
                             pendingCommands.Remove(tabId);
+                            _tabLastActivity[tabId] = DateTime.Now;
                             context.Response.Close();
                             return;
+                        }
+                        if (!string.IsNullOrWhiteSpace(tabId))
+                        {
+                            _tabLastActivity[tabId] = DateTime.Now;
                         }
                         // empty response
                         var empty = Encoding.UTF8.GetBytes("{}");
@@ -429,6 +435,32 @@ namespace FlashscoreOverlay
         {
             if (string.IsNullOrWhiteSpace(tabId) || cmd == null) return;
             pendingCommands[tabId] = cmd;
+        }
+
+        public void UpdateTabActivity(string tabId)
+        {
+            if (string.IsNullOrWhiteSpace(tabId)) return;
+            _tabLastActivity[tabId] = DateTime.Now;
+        }
+
+        public bool IsTabActive(string tabId)
+        {
+            if (string.IsNullOrWhiteSpace(tabId)) return false;
+            if (_tabLastActivity.TryGetValue(tabId, out var lastTime))
+            {
+                return (DateTime.Now - lastTime).TotalSeconds < 15;
+            }
+            return false;
+        }
+
+        public string? GetAnyActiveTab()
+        {
+            var now = DateTime.Now;
+            foreach (var kvp in _tabLastActivity)
+            {
+                if ((now - kvp.Value).TotalSeconds < 15) return kvp.Key;
+            }
+            return null;
         }
 
         private void QueueRemoveMatchCommand(string tabId, string matchId)
