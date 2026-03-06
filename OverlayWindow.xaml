@@ -31,67 +31,15 @@
         </Border.Effect>
 
         <Grid>
-            <Grid.RowDefinitions>
-                <RowDefinition Height="32"/>
-                <RowDefinition Height="*"/>
-            </Grid.RowDefinitions>
+            <wv2:WebView2 x:Name="MatchWebView"
+                           HorizontalAlignment="Stretch"
+                           VerticalAlignment="Stretch"
+                           DefaultBackgroundColor="#1a1a2e"/>
 
-            <Grid Grid.Row="0"
-                  Background="#FF0f0f23"
-                  MouseLeftButtonDown="Header_MouseLeftButtonDown">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-
-                <TextBlock x:Name="MatchTitle"
-                           Text="Flashscore Overlay"
-                           Foreground="#FFccccdd"
-                           FontWeight="SemiBold"
-                           FontSize="12"
-                           Margin="12,0,0,0"
-                           VerticalAlignment="Center"
-                           TextTrimming="CharacterEllipsis"/>
-
-                <StackPanel Grid.Column="1"
-                            Orientation="Horizontal"
-                            HorizontalAlignment="Right"
-                            VerticalAlignment="Center"
-                            Margin="0,0,4,0">
-                    <Button x:Name="ReloadButton"
-                            Width="28"
-                            Height="24"
-                            Content="↺"
-                            FontSize="13"
-                            Click="ReloadButton_Click"
-                            Background="#FF1a1a35"
-                            Foreground="#FF9999aa"
-                            BorderBrush="Transparent"
-                            Cursor="Hand"
-                            Margin="0,0,4,0"/>
-                    <Button Width="28"
-                            Height="24"
-                            Content="✕"
-                            FontSize="12"
-                            Click="CloseButton_Click"
-                            Background="#FFCC142C"
-                            Foreground="White"
-                            BorderBrush="Transparent"
-                            Cursor="Hand"/>
-                </StackPanel>
-            </Grid>
-
-            <Grid Grid.Row="1">
-                <wv2:WebView2 x:Name="MatchWebView"
-                               HorizontalAlignment="Stretch"
-                               VerticalAlignment="Stretch"
-                               DefaultBackgroundColor="#1a1a2e"/>
-
-                <!-- Hidden WebView for fetching player photos -->
-                <wv2:WebView2 x:Name="PhotoWebView" 
-                               Width="100" Height="100" 
-                               Visibility="Hidden" />
-            </Grid>
+            <!-- Hidden WebView for fetching player photos -->
+            <wv2:WebView2 x:Name="PhotoWebView" 
+                           Width="100" Height="100" 
+                           Visibility="Hidden" />
         </Grid>
     </Border>
 </Window>

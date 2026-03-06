@@ -453,7 +453,7 @@ namespace FlashscoreOverlay
             MatchWebView.NavigateToString(html);
             _ = SetScrollStateAsync(enableScroll);
 
-            MatchTitle.Text = $"Flashscore ({_matches.Count})";
+            // Title is static; match count not displayed
 
             // Sync per-match detail windows
             SyncMatchDetailWindows();
@@ -577,17 +577,13 @@ namespace FlashscoreOverlay
                         if (ev.Type == "goal" || ev.Type == "penaltyGoal" || ev.Type == "ownGoal")
                         {
                             currentGoalCount++;
-                            // Capture the LAST goal encountered (Flashscore lists them chronologically, latest at bottom)
-                            latestGoal = ev; 
+                            latestGoal = ev;
                         }
-                        if (ev.Type == "redCard" || ev.Type == "yellowCard")
-                        {
-                            currentCardCount++;
-                            // Capture the LAST card (latest in cronology)
-                            latestCard = ev;
-                        }
+                        // Only RED cards trigger notifications (yellow cards are ignored)
                         if (ev.Type == "redCard")
                         {
+                            currentCardCount++;
+                            latestCard = ev;
                             if (ev.TeamSide == "home") homeReds++;
                             else if (ev.TeamSide == "away") awayReds++;
                         }
@@ -1242,7 +1238,9 @@ namespace FlashscoreOverlay
 
             if (stage.Contains("descanso") || stage.Contains("en directo") || stage.Contains("en curso") || stage.Contains("juego") || stage.Contains("gol")) return true;
             if (stage.Contains("parte") || stage.Contains("tiempo") || stage.Contains("prórroga") || stage.Contains("extra")) return true;
-            if (stage.Contains("set")) return true; 
+            if (stage.Contains("set")) return true;
+            // Basketball live detection
+            if (stage.Contains("cuarto") || stage.Contains("período") || stage.Contains("periodo") || stage.Contains("quarter")) return true;
             if (stage.Contains("'") || time.Contains("'")) return true;
 
             if (time.Length > 0 && char.IsDigit(time[0]) && !time.Contains(":") && !time.Contains(".")) return true;
@@ -1804,10 +1802,10 @@ namespace FlashscoreOverlay
             }}
         }});
 
-        // Middle-click toggles border highlight for multiple matches
+        // Middle-click toggles highlight ONLY for football rows
         document.addEventListener('auxclick', (e) => {{
             if (e.button !== 1) return;
-            const row = e.target.closest('.match-row, .tennis-row');
+            const row = e.target.closest('.match-row');
             if (!row) return;
             e.preventDefault();
             const matchId = row.getAttribute('data-id') || '';
@@ -1926,43 +1924,62 @@ namespace FlashscoreOverlay
             const matchId = match.matchId || match.overlayId || '';
             const matchUrl = match.url || '#';
             const isLive = !!match.isLive;
-            
-            // --- Common Time Column ---
+
+            // --- Detect sport FIRST (needed for timeColHtml) ---
+            const cat = (match.category || '').toUpperCase();
+            const title = (match.competitionTitle || '').toUpperCase();
+            const url = (match.url || '').toLowerCase();
+
+            let isTennis = (!!match.homeFlag || !!match.awayFlag || !!match.homeSets || (match.setScores && match.setScores.length > 0));
+            if (!isTennis && (url.includes('/tenis/') || url.includes('/tennis/'))) isTennis = true;
+            if (!isTennis) {{
+                if (cat.includes('ATP') || cat.includes('WTA') || cat.includes('CHALLENGER') || cat.includes('ITF') ||
+                    cat.includes('TENIS') || title.includes('TENIS')) isTennis = true;
+            }}
+            const isBasketball = url.includes('/baloncesto/') || url.includes('/basketball/')
+                || cat.includes('BALONCESTO') || cat.includes('BASKETBALL') || cat.includes('NBA') || cat.includes('ACB');
+
+            // --- Build Time Column ---
+            // Always strip ' from displayTime; only blinkHtml re-adds it for football
             let timeColHtml;
             if (isLive) {{
-                let displayTime = match.timeLabel || '';
-                const isBlinking = !!match.isBlinking;
-                if (isBlinking) {{
-                    displayTime = displayTime.replace(/'/g, '').trim();
-                }}
+                let displayTime = (match.timeLabel || '').replace(/'/g, '').trim();
+                const isBlinking = !!match.isBlinking && !isTennis && !isBasketball;
                 const blinkHtml = isBlinking ? `<span class='blink'>'</span>` : '';
-                timeColHtml = `<div class='event__stage'><div class='event__stage--block'>${{displayTime}}${{blinkHtml}}</div></div>`;
+                const stageDivEl = document.createElement('div');
+                stageDivEl.className = 'event__stage';
+                const blockEl = document.createElement('div');
+                blockEl.className = 'event__stage--block';
+                blockEl.innerHTML = displayTime + blinkHtml;
+                stageDivEl.appendChild(blockEl);
+                if (isBasketball && match.stageLabel) {{
+                    const parsed = parseBasketballStage(match.stageLabel);
+                    if (parsed.clock) blockEl.textContent = parsed.clock.replace(/'/g, '').trim();
+                    if (parsed.quarter) {{
+                        const ql = document.createElement('div');
+                        ql.className = 'stage-label';
+                        ql.textContent = parsed.quarter;
+                        stageDivEl.appendChild(ql);
+                    }}
+                }}
+                timeColHtml = stageDivEl.outerHTML;
             }} else {{
-                let inner = match.timeLabel || '\u2014';
+                let inner = (match.timeLabel || '\u2014').replace(/'/g, '').trim();
                 let statusClass = '';
                 if (match.stageLabel) {{
                     const stageLower = match.stageLabel.toLowerCase();
                     if (stageLower.includes('finalizado') || stageLower.includes('final') || stageLower.includes('terminado')) {{
-                         statusClass = 'status-finished';
+                        statusClass = 'status-finished';
                     }}
-                    inner += `<div class='stage-label ${{statusClass}}'>${{match.stageLabel}}</div>`;
+                    if (isBasketball) {{
+                        const parsed = parseBasketballStage(match.stageLabel);
+                        if (parsed.clock) inner = parsed.clock.replace(/'/g, '').trim();
+                        if (parsed.quarter) inner += `<div class='stage-label'>${{parsed.quarter}}</div>`;
+                    }} else {{
+                        inner += `<div class='stage-label ${{statusClass}}'>${{match.stageLabel}}</div>`;
+                    }}
                 }}
                 timeColHtml = `<div class='event__time ${{statusClass}}'>${{inner}}</div>`;
-            }}
-
-            // --- Detect Tennis Mode ---
-            const cat = (match.category || '').toUpperCase();
-            const title = (match.competitionTitle || '').toUpperCase();
-            const url = (match.url || '').toLowerCase();
-            
-            let isTennis = (!!match.homeFlag || !!match.awayFlag || !!match.homeSets || (match.setScores && match.setScores.length > 0));
-            if (!isTennis && (url.includes('/tenis/') || url.includes('/tennis/'))) isTennis = true;
-            
-            if (!isTennis) {{
-                if (cat.includes('ATP') || cat.includes('WTA') || cat.includes('CHALLENGER') || cat.includes('ITF') || 
-                    cat.includes('TENIS') || title.includes('TENIS')) {{
-                    isTennis = true;
-                }}
             }}
             
             const homeName = match.homeTeam || 'Local';
@@ -2137,7 +2154,16 @@ namespace FlashscoreOverlay
             document.body.innerHTML += '<div style=""color:red;padding:10px"">Error: ' + e.message + '</div>';
         }}
 
-        // ========== LIVE UPDATE receiver (data from hidden WebView2) ==========
+        // ========= Helper: parse basketball stage (splits e.g. 2o cuarto 9 into quarter+clock) ==========
+        function parseBasketballStage(stage) {{
+            if (!stage) return {{ quarter: '', clock: '' }};
+            const s = stage.trim();
+            const m2 = s.match(/^(.*?(?:cuarto|per[\u00ed\u0069]odo|quarter|\bQ\d\b|\bOT\b)\s*)([\d:]+\'?\d*)\s*$/i);
+            if (m2) return {{ quarter: m2[1].trim(), clock: m2[2].trim() }};
+            return {{ quarter: s, clock: '' }};
+        }}
+
+        // ========== LIVE UPDATE receiver ==========
         window.applyLiveUpdate = function(jsonStr) {{
             try {{
                 const data = JSON.parse(jsonStr);
@@ -2146,27 +2172,38 @@ namespace FlashscoreOverlay
                     const row = container.querySelector('[data-id=""' + m.matchId + '""]');
                     if (!row) return;
 
-                    // Update time/stage
+                    // Detect sport from data-url
+                    const rowUrl = (row.getAttribute('data-url') || '').toLowerCase();
+                    const rowIsTennis = rowUrl.includes('/tenis/') || rowUrl.includes('/tennis/');
+                    const rowIsBasket = rowUrl.includes('/baloncesto/') || rowUrl.includes('/basketball/');
+
                     const stageEl = row.querySelector('.event__stage');
-                    const timeEl = row.querySelector('.event__time');
+                    const timeEl  = row.querySelector('.event__time');
 
                     if (m.stage) {{
                         const stageLower = m.stage.toLowerCase();
                         const isFinished = stageLower.includes('finalizado') || stageLower.includes('final') || stageLower.includes('terminado');
-                        
+                        const blinkSpan = (m.hasBlink && !isFinished && !rowIsTennis && !rowIsBasket)
+                            ? ""<span class='blink'>&#39;</span>"" : '';
+
                         if (stageEl) {{
                             const stageBlock = stageEl.querySelector('.event__stage--block');
                             if (stageBlock) {{
-                                let displayTime = m.stage.replace(/'/g, '').trim();
-                                const blinkSpan = (m.hasBlink && !isFinished) ? ""<span class='blink'>&#39;</span>"" : '';
-                                stageBlock.innerHTML = displayTime + blinkSpan;
-                                
+                                if (rowIsBasket) {{
+                                    const parsed = parseBasketballStage(m.stage);
+                                    stageBlock.textContent = (parsed.clock || m.stage).replace(/'/g, '').trim();
+                                    let ql = stageEl.querySelector('.stage-label');
+                                    if (parsed.quarter) {{
+                                        if (!ql) {{ ql = document.createElement('div'); ql.className = 'stage-label'; stageEl.appendChild(ql); }}
+                                        ql.textContent = parsed.quarter;
+                                    }} else if (ql) {{ ql.remove(); }}
+                                }} else {{
+                                    stageBlock.innerHTML = m.stage.replace(/'/g, '').trim() + blinkSpan;
+                                }}
                                 if (isFinished) {{
                                     stageEl.classList.remove('event__stage');
                                     stageEl.classList.add('status-finished');
                                     row.classList.add('match-finished');
-                                    
-                                    // Detect winner in JS too
                                     const hScore = parseInt(m.homeScore || '0', 10);
                                     const aScore = parseInt(m.awayScore || '0', 10);
                                     const teams = row.querySelectorAll('.team-item, .tennis-player');
@@ -2174,24 +2211,15 @@ namespace FlashscoreOverlay
                                         teams[0].classList.toggle('is-winner', hScore > aScore);
                                         teams[1].classList.toggle('is-winner', aScore > hScore);
                                     }}
-
-                                    // Also find score-vals and mark them finished
-                                    const scoreVals = row.querySelectorAll('.score-val');
-                                    scoreVals.forEach(v => v.classList.add('finished'));
+                                    row.querySelectorAll('.score-val').forEach(v => v.classList.add('finished'));
                                 }}
                             }}
                         }} else if (timeEl) {{
                             const newDiv = document.createElement('div');
                             newDiv.className = isFinished ? 'event__time status-finished' : 'event__stage';
-                            
-                            let displayTime = m.stage.replace(/'/g, '').trim();
-                            const blinkSpan = (m.hasBlink && !isFinished) ? ""<span class='blink'>&#39;</span>"" : '';
-                            
                             if (isFinished) {{
-                                newDiv.innerHTML = displayTime;
+                                newDiv.textContent = m.stage.replace(/'/g, '').trim();
                                 row.classList.add('match-finished');
-
-                                // Detect winner in JS too
                                 const hScore = parseInt(m.homeScore || '0', 10);
                                 const aScore = parseInt(m.awayScore || '0', 10);
                                 const teams = row.querySelectorAll('.team-item, .tennis-player');
@@ -2199,8 +2227,19 @@ namespace FlashscoreOverlay
                                     teams[0].classList.toggle('is-winner', hScore > aScore);
                                     teams[1].classList.toggle('is-winner', aScore > hScore);
                                 }}
+                            }} else if (rowIsBasket) {{
+                                const parsed = parseBasketballStage(m.stage);
+                                const blk = document.createElement('div'); blk.className = 'event__stage--block';
+                                blk.textContent = (parsed.clock || m.stage).replace(/'/g, '').trim();
+                                newDiv.appendChild(blk);
+                                if (parsed.quarter) {{
+                                    const ql2 = document.createElement('div'); ql2.className = 'stage-label';
+                                    ql2.textContent = parsed.quarter; newDiv.appendChild(ql2);
+                                }}
                             }} else {{
-                                newDiv.innerHTML = ""<div class='event__stage--block'>"" + displayTime + blinkSpan + '</div>';
+                                const blk2 = document.createElement('div'); blk2.className = 'event__stage--block';
+                                blk2.innerHTML = m.stage.replace(/'/g, '').trim() + blinkSpan;
+                                newDiv.appendChild(blk2);
                             }}
                             timeEl.replaceWith(newDiv);
                         }}

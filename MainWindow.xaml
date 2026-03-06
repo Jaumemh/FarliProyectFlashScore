@@ -68,13 +68,6 @@
                             Margin="2"
                             Style="{StaticResource ModernButtonStyle}"
                             Click="Minimize_Click"/>
-                    <Button Content="✕" 
-                            Width="30" 
-                            Height="30" 
-                            Margin="2"
-                            Background="#FFC80037"
-                            Style="{StaticResource ModernButtonStyle}"
-                            Click="Close_Click"/>
                 </StackPanel>
             </Grid>
         </Border>
