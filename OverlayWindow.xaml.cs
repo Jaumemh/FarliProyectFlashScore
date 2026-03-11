@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -2078,8 +2078,9 @@ namespace FlashscoreOverlay
             const hasScore = !!match.hasScore;
             const scoreClass = isLive ? 'score-val' : (hasScore ? 'score-val finished' : 'score-val preview');
 
-            const homeScoreText = match.homeScore || (hasScore ? '0' : '-');
-            const awayScoreText = match.awayScore || (hasScore ? '0' : '-');
+            const isNotStarted = !isLive && !isFinished;
+            const homeScoreText = isNotStarted ? '' : (match.homeScore || (hasScore ? '0' : '-'));
+            const awayScoreText = isNotStarted ? '' : (match.awayScore || (hasScore ? '0' : '-'));
 
             // Winner detection for football
             const hScore = parseInt(match.homeScore || '0', 10);

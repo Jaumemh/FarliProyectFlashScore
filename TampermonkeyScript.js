@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Flashcore Overlay - Windows App Integration
 // @namespace    http://tampermonkey.net/
-// @version      13.0
+// @version      13.1
 // @description  Overlay que envía datos a la aplicación WPF local (solo pin/unpin)
 // @author       TuNombre
 // @match        https://www.flashscore.es/*
@@ -23,6 +23,7 @@
     // Estilos CSS
     GM_addStyle(`
         /* Estilo del botón circular */
+        /* FIX: color por defecto ROJO (sin anclar), azul solo cuando .active (anclado) */
         .fc-overlay-btn {
             position: absolute;
             right: 10px;
@@ -30,7 +31,7 @@
             width: 30px;
             height: 30px;
             border-radius: 50%;
-            background-color: #007bff;
+            background-color: #C80037;
             color: white;
             border: none;
             cursor: pointer;
@@ -43,7 +44,7 @@
             box-shadow: 0 2px 5px rgba(0,0,0,0.3);
         }
         .fc-overlay-btn:hover {
-            background-color: #0056b3;
+            background-color: #96002a;
         }
         .fc-overlay-btn.active {
             background-color: #0787FA;
@@ -684,7 +685,7 @@
 
         const btn = document.createElement('button');
         btn.className = 'fc-overlay-btn';
-        btn.textContent = '📌';
+        btn.textContent = '';
         btn.title = 'Añadir al overlay de Windows';
 
         btn.addEventListener('click', async function (e) {
